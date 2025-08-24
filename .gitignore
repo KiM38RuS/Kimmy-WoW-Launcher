@@ -1,0 +1,10 @@
+# Игнорировать ini с личными данными
+KimmyWoWLauncher.ini
+
+# Системные файлы
+Thumbs.db
+Desktop.ini
+
+# Временные файлы
+*.bak
+*.tmp
