@@ -1,3 +1,6 @@
+; v1.1:
+; + Попытка реализовать вкладочный интерфейс
+
 #Requires AutoHotkey v2.0
 
 #SingleInstance Force ; Пропуск диалогового окна при запуске скрипта в случае если скрипт уже запущен. Аналогично функции Reload.
@@ -7,7 +10,7 @@ CloseOtherVersions("KimmyWoWLauncher")
 
 ; === Настройка игр и скриптов (Чтение настроек из INI, ЗАДАЁТ ПОЛЬЗОВАТЕЛЬ) ===
 iniPath := A_ScriptDir "\KimmyWoWLauncher.ini"
-scriptVer := "v1.0"
+scriptVer := "v1.1"
 
 if !FileExist(iniPath) { ; Проверяем, существует ли ini
     defaultIni := "
@@ -50,12 +53,15 @@ scriptName2=
 scriptName3=
 scriptName4=
 scriptName5=
+
+[Settings]
+AlwaysOnTop=0
     )"
 
     FileAppend(defaultIni, iniPath, "UTF-8")
 	
     ; показываем сообщение
-    MsgBox("Здравствуй, путник.`nПрисядь у костра и заполни ini-файл, который сейчас откроется.", "Первый запуск")
+    MsgBox("Здравствуй, путник.`nПрисядь у костра и заполни ini-файл, который сейчас откроется.", "KimmyWoWLauncher")
 
     ; открываем ini
     Run(iniPath)
@@ -99,31 +105,17 @@ for i, name in scriptName {
     }
 }
 
+; Читаем настройку AlwaysOnTop
+alwaysOnTopVal := IniRead(iniPath, "Settings", "AlwaysOnTop", "0")
+onTop := (alwaysOnTopVal = "1") ? "+AlwaysOnTop" : ""
+
 ; === Интерфейс ===
-myGui := Gui("", "Kimmy WoW Launcher")
+myGui := Gui(onTop, "Kimmy WoW Launcher")
 myGui.SetFont("s10", "Segoe UI")
-; Верхняя строка: Игры:, версия, Настройки
-if (gamesExist) {
-	myGui.AddText("xm", "Игры:")
-} else {
-    ; === если игр нет ===
-	myGui.SetFont("s10 bold")  ; ставим жирный шрифт (s10 = размер)
-    myGui.AddText("xm", "Игры не заданы.`nОтредактируй ini-файл и перезапусти лаунчер`n(ПКМ по кнопке настроек ⚙)")
-}
-settingsBtn := myGui.Add("Button", "xs+285 yp-4 w25 h25", "⚙")
-myGui.SetFont("s10 norm")  ; возвращаем обычный шрифт, чтобы остальные элементы были нормальными
-myGui.Add("Text", "xp-35 ys", scriptVer)
-settingsBtn.OnEvent("Click", (*) => OpenSettingsLeft())
-settingsBtn.OnEvent("ContextMenu", (*) => OpenSettingsRight())
 
-OpenSettingsLeft() {
-	Run(iniPath)
-}
-
-OpenSettingsRight() {
-    Reload
-}
-
+; --- Вводим вкладки ---
+; --- Начинаем с первой вкладки 
+Tab := MyGui.Add("Tab3","xm", ["Игры", "Настройки", "Инфо"])
 ; Карты вместо массивов, чтобы спокойно иметь «дыры» по индексам
 gameBtn   := Map()
 cancelBtn := Map()
@@ -132,7 +124,7 @@ if (gamesExist) {
 	; Создаём кнопки запуска игр и отмены
 	for i, name in gameName {
 		if (name != "") {
-			gameBtn[i] := myGui.AddButton("xm w200 h30", name)
+			gameBtn[i] := myGui.AddButton("xm+10 y+m w200 h30", name)
 			cancelBtn[i] := myGui.AddButton("x+10 yp w100 h30", "Отмена")
 			cancelBtn[i].Visible := false
 
@@ -141,83 +133,117 @@ if (gamesExist) {
 			cancelBtn[i].OnEvent("Click", CancelWoW.Bind(i))
 		}
 	}
-}
 
-; Проверяем скрипты
-scriptsExist := false
-Loop 5 {
-    val := IniRead(iniPath, "Scripts", "scriptName" A_Index, "")
-    if (val != "") {
-        scriptsExist := true
-        break
-    }
-}
-
-; Если нашли хоть одно значение — добавляем заголовок
-if (scriptsExist) {
-    myGui.AddText("xm", "Скрипты:")
-	
-	scriptChk := Map()
-	scriptInfoBtn := Map()
-	scriptDesc := Map()
-
-	for i, name in scriptName {
-		if (name != "") {
-			; Чекбокс
-			scriptChk[i] := myGui.AddCheckbox("xm", name)
-			scriptChk[i].Value := 1
-
-			; Берём реальный путь (если это .lnk — разворачиваем ярлык)
-			real := ResolveShortcut(script[i])
-
-			; Читаем «шапку» из комментариев в начале файла
-			scriptDesc[i] := GetScriptDescription(real)
-
-			; Кнопка-инфо справа от чекбокса (иконка как у «Очистить кэш»)
-			scriptInfoBtn[i] := myGui.AddPicture("yp x+m-10 w16 h16", "Help.png")
-			scriptInfoBtn[i].OnEvent("Click", ShowScriptTooltip.Bind(i))
+	; Проверяем скрипты
+	scriptsExist := false
+	Loop 5 {
+		val := IniRead(iniPath, "Scripts", "scriptName" A_Index, "")
+		if (val != "") {
+			scriptsExist := true
+			break
 		}
 	}
-}
 
-if (gamesExist) {
-	myGui.AddText("xm", "Твики:")
-	chkClearCache := myGui.AddCheckbox("xm", "Очистить кэш")
-	ClearCacheinfoBtn := myGui.AddPicture("yp x+m-10 w16 h16", "Help.png")
-	ClearCacheinfoBtn.OnEvent("Click", ShowClearCacheTooltip)
-	OnMessage(0x201, TooltipHide_OnClick) ; WM_LBUTTONDOWN
-	OnMessage(0x204, TooltipHide_OnClick) ; WM_RBUTTONDOWN
-	OnMessage(0x207, TooltipHide_OnClick) ; WM_MBUTTONDOWN
-	ShowClearCacheTooltip(*) {
-		ToolTip("При запуске игры удалятся папки Cache и Data\Cache")
-		SetTimer(() => ToolTip(""), -5000) ; Убираем подсказку через 3 секунды
+	; Если нашли хоть одно значение — добавляем заголовок
+	if (scriptsExist) {
+		myGui.AddText("xm+10 y+m", "Скрипты:")
+		
+		scriptChk := Map()
+		scriptInfoBtn := Map()
+		scriptDesc := Map()
+
+		for i, name in scriptName {
+			if (name != "") {
+				; Чекбокс
+				scriptChk[i] := myGui.AddCheckbox("xm+10 y+m", name)
+				scriptChk[i].Value := 1
+
+				; Берём реальный путь (если это .lnk — разворачиваем ярлык)
+				real := ResolveShortcut(script[i])
+
+				; Читаем «шапку» из комментариев в начале файла
+				scriptDesc[i] := GetScriptDescription(real)
+
+				; Кнопка-инфо справа от чекбокса (иконка как у «Очистить кэш»)
+				scriptInfoBtn[i] := myGui.AddPicture("yp x+m-10 w16 h16 Icon2", "pics.dll")
+				scriptInfoBtn[i].OnEvent("Click", ShowScriptTooltip.Bind(i))
+			}
+		}
 	}
+
+	if (gamesExist) {
+		myGui.AddText("xm+10 y+m", "Твики:")
+		chkClearCache := myGui.AddCheckbox("xm+10 y+m", "Очистить кэш")
+		ClearCacheinfoBtn := myGui.AddPicture("yp x+m-10 w16 h16 Icon2", "pics.dll")
+		ClearCacheinfoBtn.OnEvent("Click", ShowClearCacheTooltip)
+		OnMessage(0x201, TooltipHide_OnClick) ; WM_LBUTTONDOWN
+		OnMessage(0x204, TooltipHide_OnClick) ; WM_RBUTTONDOWN
+		OnMessage(0x207, TooltipHide_OnClick) ; WM_MBUTTONDOWN
+		ShowClearCacheTooltip(*) {
+			ToolTip("При запуске игры удалятся папки Cache и Data\Cache")
+			SetTimer(() => ToolTip(""), -5000) ; Убираем подсказку через 3 секунды
+		}
+	}
+
+	TooltipHide_OnClick(wParam, lParam, msg, hwnd) {
+		global myGui
+		; Если кликнули по самому тултипу — скрываем
+		try
+			cls := WinGetClass("ahk_id " hwnd)
+		catch
+			cls := ""
+		if (cls = "tooltips_class32") {
+			ToolTip("")
+			return
+		}
+		; Если клик внутри нашего GUI — тоже скрываем
+		try
+			gui := GuiFromHwnd(hwnd)
+		catch
+			gui := ""
+		if (gui && myGui && gui.Hwnd = myGui.Hwnd) {
+			ToolTip("")
+		}
+	}
+
+	progress := myGui.AddProgress("xm+10 y+m w310 h20 -Smooth")
+	progress.Value := 0
+	progress.Visible := false
+} else {
+    ; === если игр нет ===
+	myGui.SetFont("s10 bold")  ; ставим жирный шрифт (s10 = размер)
+    myGui.AddText("xm", "Игры не заданы.`nОтредактируй ini-файл и перезапусти лаунчер`n(во вкладке настроек)")
+	myGui.SetFont("s10 norm")  ; возвращаем обычный шрифт, чтобы остальные элементы были нормальными
+}
+Tab.UseTab(2) ; Вкладка "Настройки"
+btnOpenIni := myGui.AddButton("xm+10 y+m Section w200 h30", "Открыть INI-файл").OnEvent("Click", (*) => Run(iniPath))
+btnReload := myGui.AddButton("x+10 yp w100 h30", "Перезапустить").OnEvent("Click", (*) => ReloadFunc())
+ReloadFunc() {
+	Reload
+}
+; Чекбокс с сохранением состояния
+onTopCB := myGui.AddCheckBox("xs vOnTop", "Поверх всех окон (требуется перезагрузка)")
+onTopCB.Value := alwaysOnTopVal   ; восстанавливаем последнее значение
+
+; Обработчик клика по чекбоксу
+onTopCB.OnEvent("Click", (*) => SaveAlwaysOnTop())
+
+SaveAlwaysOnTop() {
+    global onTopCB, iniPath
+    newVal := onTopCB.Value ? "1" : "0"
+    IniWrite(newVal, iniPath, "Settings", "AlwaysOnTop")
 }
 
-TooltipHide_OnClick(wParam, lParam, msg, hwnd) {
-    global myGui
-    ; Если кликнули по самому тултипу — скрываем
-    try
-		cls := WinGetClass("ahk_id " hwnd)
-    catch
-		cls := ""
-    if (cls = "tooltips_class32") {
-        ToolTip("")
-        return
-    }
-    ; Если клик внутри нашего GUI — тоже скрываем
-    try
-		gui := GuiFromHwnd(hwnd)
-    catch
-		gui := ""
-    if (gui && myGui && gui.Hwnd = myGui.Hwnd) {
-        ToolTip("")
-    }
-}
+Tab.UseTab(3) ; Вкладка "Инфо"
 
-progress := myGui.AddProgress("xm w310 h20 -Smooth")
-progress.Value := 0
-progress.Visible := false
+MyGui.AddPicture("Section w64 h-1 Icon1", "pics.dll")
+myGui.AddText("x+m yp+22", "Kimmy WoW Launcher " scriptVer)
+MyGui.AddPicture("xs w64 h-1 Icon3", "pics.dll")
+MyGui.AddLink("x+m yp+22", '<a href="https://github.com/KiM38RuS/Kimmy-WoW-Launcher">Страница проекта на GitHub</a>')
+MyGui.AddPicture("xs w64 h-1 Icon4", "pics.dll")
+MyGui.AddLink("x+m yp+22", 'Автор - <a href="https://github.com/KiM38RuS">KiM38RuS</a>')
+Tab.UseTab() ; Интерфейс, заданный после этой строки будет размещён вне вкладок
+
 myGui.Show()
 
 ; === Глобальные переменные ===
