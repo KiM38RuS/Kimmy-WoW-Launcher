@@ -9,7 +9,7 @@ CloseOtherVersions("KimmyWoWLauncher")
 iniPath := A_ScriptDir "\KimmyWoWLauncher.ini"
 scriptVer := "v1.1"
 
-if !FileExist(iniPath) { ; Проверяем, существует ли ini
+if !FileExist(iniPath) { ; Проверка существования ini-файла
     defaultIni := "
     (
 ; ==========================================================
@@ -53,6 +53,9 @@ scriptName5=
 
 [Settings]
 AlwaysOnTop=0
+SaveWindowPos=0
+WinPosX=
+WinPosY=
     )"
 
     FileAppend(defaultIni, iniPath, "UTF-8")
@@ -65,7 +68,7 @@ AlwaysOnTop=0
 }
 
 gamesExist := false
-Loop 5 {
+Loop 5 { ; Чтение ini-файла на наличие игр
     val := IniRead(iniPath, "Games", "gameName" A_Index, "")
     if (val != "") {
         gamesExist := true
@@ -77,7 +80,7 @@ gameName   := []
 password   := []
 scriptName := []
 
-Loop 5 {
+Loop 5 { ; Чтение названий игр, паролей и скриптов из ini-файла
     i := A_Index
     gameName.Push(IniRead(iniPath, "Games", "gameName" i, ""))
     password.Push(IniRead(iniPath, "Passwords", "password" i, ""))
@@ -216,6 +219,7 @@ Tab.UseTab(2) ; Вкладка "Настройки"
 btnOpenIni := myGui.AddButton("xm+10 y+m Section w200 h30", "Открыть INI-файл").OnEvent("Click", (*) => Run(iniPath))
 btnReload := myGui.AddButton("x+10 yp w100 h30", "Перезапустить").OnEvent("Click", (*) => ReloadFunc())
 ReloadFunc() {
+	SaveWindowPosition
 	Reload
 }
 ; Чекбокс с сохранением состояния
@@ -231,6 +235,19 @@ SaveAlwaysOnTop() {
     IniWrite(newVal, iniPath, "Settings", "AlwaysOnTop")
 }
 
+; Чекбокс "Сохранять положение окна"
+savePosVal := IniRead(iniPath, "Settings", "SaveWindowPos", "0")
+savePosCB := myGui.AddCheckBox("xs vSavePos", "Сохранять положение окна при его закрытии")
+savePosCB.Value := savePosVal
+
+savePosCB.OnEvent("Click", (*) => SaveWindowPosSetting())
+
+SaveWindowPosSetting() {
+    global savePosCB, iniPath
+    newVal := savePosCB.Value ? "1" : "0"
+    IniWrite(newVal, iniPath, "Settings", "SaveWindowPos")
+}
+
 Tab.UseTab(3) ; Вкладка "Инфо"
 
 MyGui.AddPicture("Section w64 h-1 Icon1", "pics.dll")
@@ -241,7 +258,27 @@ MyGui.AddPicture("xs w64 h-1 Icon4", "pics.dll")
 MyGui.AddLink("x+m yp+22", 'Автор - <a href="https://github.com/KiM38RuS">KiM38RuS</a>')
 Tab.UseTab() ; Интерфейс, заданный после этой строки будет размещён вне вкладок
 
-myGui.Show()
+; Восстановление позиции окна при запуске лаунчера
+WinPosX := IniRead(iniPath, "Settings", "WinPosX", "")
+WinPosY := IniRead(iniPath, "Settings", "WinPosY", "")
+
+showParams := ""
+if (WinPosX != "" && WinPosY != "") {
+    showParams := "x" WinPosX " y" WinPosY
+}
+
+myGui.Show(showParams)
+
+; Сохранение позиции окна при закрытии лаунчера
+myGui.OnEvent("Close", SaveWindowPosition)
+SaveWindowPosition(*) {
+    global savePosCB, myGui, iniPath
+    if (savePosCB.Value) {
+        WinGetPos(&x, &y, &w, &h, "ahk_id " myGui.Hwnd)
+        IniWrite(x, iniPath, "Settings", "WinPosX")
+        IniWrite(y, iniPath, "Settings", "WinPosY")
+    }
+}
 
 ; === Глобальные переменные ===
 wowPID := 0
