@@ -1,108 +1,73 @@
-#Requires AutoHotkey v2.0
+#Requires AutoHotkey v2+
+#SingleInstance Force
 
-#SingleInstance Force ; Пропуск диалогового окна при запуске скрипта в случае если скрипт уже запущен. Аналогично функции Reload.
+;@Ahk2Exe-SetMainIcon Kimmy_WL_Logo_icofx.ico
+;@Ahk2Exe-SetName Kimmy WoW Launcher
+;@Ahk2Exe-SetDescription Лаунчер для разных версий игры World of Warcraft
+;@Ahk2Exe-SetVersion 1.2
 
-; Закрытие других версий того же скрипта
-CloseOtherVersions("KimmyWoWLauncher")
-
-; === Настройка игр и скриптов (Чтение настроек из INI, ЗАДАЁТ ПОЛЬЗОВАТЕЛЬ) ===
+scriptVer := "v1.2"
 iniPath := A_ScriptDir "\KimmyWoWLauncher.ini"
-scriptVer := "v1.1"
+MyGuiTitle := "Kimmy WoW Launcher"
 
-if !FileExist(iniPath) { ; Проверка существования ini-файла
+;@Ahk2Exe-IgnoreBegin
+; --- УСТАНОВКА ИКОНКИ ---
+IconFile := "Kimmy_WL_Logo_icofx.ico"
+if FileExist(IconFile) {
+    TraySetIcon(IconFile)
+    try {
+        if (hIcon := LoadPicture(IconFile, "w32 h32", &imgType)) {
+            SendMessage(0x0080, 1, hIcon, myGui.Hwnd) ; ICON_BIG
+            SendMessage(0x0080, 0, hIcon, myGui.Hwnd) ; ICON_SMALL
+        }
+    }
+}
+;@Ahk2Exe-IgnoreEnd
+
+; Проверка существования ini-файла или его создание
+if !FileExist(iniPath) {
     defaultIni := "
     (
 ; ==========================================================
 ; KimmyWoWLauncher.ini
 ; ==========================================================
-; Привет! 👋
-; Чтобы всё работало, сделай так:
-; 1) Выведи на рабочий стол ярлыки запуска WoW или лаунчеров WoW
-; 2) Впиши в переменные gameName1..5 соответствующие имена ярлыков
-;    Например:
-;    gameName1=WoW Circle 8.3.7
-;    gameName2=Firestorm Launcher
-;
-; Пароли связаны с играми по номерам. Например, пароль password1
-; будет скопирован при запуске gameName1
-; 
-; Когда закончишь редактирование этого файла, сохрани его
-; и перезапусти Kimmy WoW Launcher (Настройки => Перезапустить)
+; Настройки и пути к играм сохраняются здесь автоматически
+; через интерфейс лаунчера.
 ; ==========================================================
-
-[Games]
-gameName1=
-gameName2=
-gameName3=
-gameName4=
-gameName5=
-
-[Passwords]
-password1=
-password2=
-password3=
-password4=
-password5=
-
-[Scripts]
-scriptName1=
-scriptName2=
-scriptName3=
-scriptName4=
-scriptName5=
-
-[Settings]
-AlwaysOnTop=0
-SaveWindowPos=0
-WinPosX=
-WinPosY=
     )"
 
     FileAppend(defaultIni, iniPath, "UTF-8")
-	
-    ; показываем сообщение
-    MsgBox("Здравствуй, путник.`nПрисядь у костра и заполни ini-файл, который сейчас откроется.", "KimmyWoWLauncher")
-
-    ; открываем ini
-    Run(iniPath)
 }
 
 gamesExist := false
-Loop 5 { ; Чтение ini-файла на наличие игр
-    val := IniRead(iniPath, "Games", "gameName" A_Index, "")
-    if (val != "") {
-        gamesExist := true
-        break
-    }
-}
-
 gameName   := []
 password   := []
 scriptName := []
+game       := []
+script     := []
 
-Loop 5 { ; Чтение названий игр, паролей и скриптов из ini-файла
+Loop 5 {
     i := A_Index
-    gameName.Push(IniRead(iniPath, "Games", "gameName" i, ""))
+    gName := IniRead(iniPath, "Games", "gameName" i, "")
+    gameName.Push(gName)
+    if (gName != "")
+        gamesExist := true
+    
     password.Push(IniRead(iniPath, "Passwords", "password" i, ""))
-    scriptName.Push(IniRead(iniPath, "Scripts", "scriptName" i, ""))
-}
+    
+    sName := IniRead(iniPath, "Scripts", "scriptName" i, "")
+    scriptName.Push(sName)
 
-; Задание пути к файлам игр и скриптов
-game := []
-for i, name in gameName {
-    if (name != "") {
-        game.Push(A_Desktop "\" name ".lnk")
-    } else {
-        game.Push("")
-    }
-}
-script := []
-for i, name in scriptName {
-    if (name != "") {
-        script.Push(A_Desktop "\" name ".lnk")
-    } else {
-        script.Push("")
-    }
+    ; Умное чтение путей: если абсолютный путь не задан, используем старый формат ярлыков на рабочем столе
+    gPath := IniRead(iniPath, "GamePaths", "path" i, "")
+    if (gPath == "" && gName != "")
+        gPath := A_Desktop "\" gName ".lnk"
+    game.Push(gPath)
+
+    sPath := IniRead(iniPath, "ScriptPaths", "path" i, "")
+    if (sPath == "" && sName != "")
+        sPath := A_Desktop "\" sName ".lnk"
+    script.Push(sPath)
 }
 
 ; Читаем настройку AlwaysOnTop
@@ -110,111 +75,115 @@ alwaysOnTopVal := IniRead(iniPath, "Settings", "AlwaysOnTop", "0")
 onTop := (alwaysOnTopVal = "1") ? "+AlwaysOnTop" : ""
 
 ; === Интерфейс ===
-myGui := Gui(onTop, "Kimmy WoW Launcher")
+myGui := Gui(onTop, MyGuiTitle)
 myGui.SetFont("s10", "Segoe UI")
 
 ; --- Вводим вкладки ---
 ; --- Начинаем с первой вкладки 
-Tab := MyGui.Add("Tab3","xm", ["Игры", "Настройки", "Инфо"])
-; Карты вместо массивов, чтобы спокойно иметь «дыры» по индексам
+Tab := MyGui.AddTab3("xm", ["Игры", "Настройки", "Инфо"])
 gameBtn   := Map()
 cancelBtn := Map()
+editBtn   := Map() ; Новая карта для кнопок настроек
+
+addedCount := 0
+
+; Отрисовка существующих игр
+for i, name in gameName {
+    if (name != "") {
+        gameBtn[i] := myGui.AddButton("xm+10 y+m w190 h30", name)
+        editBtn[i] := myGui.AddButton("x+10 yp w30 h30", "⚙")
+        cancelBtn[i] := myGui.AddButton("x+10 yp w70 h30", "Отмена")
+        cancelBtn[i].Visible := false
+
+        gameBtn[i].OnEvent("Click", LaunchWoW.Bind(i))
+        gameBtn[i].OnEvent("ContextMenu", OpenGameFolder.Bind(i))
+        cancelBtn[i].OnEvent("Click", CancelWoW.Bind(i))
+        editBtn[i].OnEvent("Click", OpenSettingsMenu.Bind(i, false))
+        addedCount++
+    }
+}
+
+; Кнопка добавления новой игры, если есть свободные слоты
+if (addedCount < 5) {
+    emptyIndex := 0
+    for i, name in gameName {
+        if (name == "") {
+            emptyIndex := i
+            break
+        }
+    }
+    if (emptyIndex > 0) {
+        gameBtn[emptyIndex] := myGui.AddButton("xm+10 y+m w190 h30", "+ Добавить игру...")
+        gameBtn[emptyIndex].OnEvent("Click", OpenSettingsMenu.Bind(emptyIndex, true))
+    }
+}
 
 if (gamesExist) {
-	; Создаём кнопки запуска игр и отмены
-	for i, name in gameName {
-		if (name != "") {
-			gameBtn[i] := myGui.AddButton("xm+10 y+m w200 h30", name)
-			cancelBtn[i] := myGui.AddButton("x+10 yp w100 h30", "Отмена")
-			cancelBtn[i].Visible := false
+    ; Проверяем скрипты
+    scriptsExist := false
+    Loop 5 {
+        val := IniRead(iniPath, "Scripts", "scriptName" A_Index, "")
+        if (val != "") {
+            scriptsExist := true
+            break
+        }
+    }
 
-			gameBtn[i].OnEvent("Click", LaunchWoW.Bind(i))
-			gameBtn[i].OnEvent("ContextMenu", OpenGameFolder.Bind(i))
-			cancelBtn[i].OnEvent("Click", CancelWoW.Bind(i))
-		}
-	}
+    ; Если нашли хоть одно значение — добавляем заголовок
+    if (scriptsExist) {
+        myGui.AddText("xm+10 y+m", "Скрипты:")
+        
+        scriptChk := Map()
+        scriptInfoBtn := Map()
+        scriptDesc := Map()
 
-	; Проверяем скрипты
-	scriptsExist := false
-	Loop 5 {
-		val := IniRead(iniPath, "Scripts", "scriptName" A_Index, "")
-		if (val != "") {
-			scriptsExist := true
-			break
-		}
-	}
+        for i, name in scriptName {
+            if (name != "") {
+                scriptChk[i] := myGui.AddCheckbox("xm+10 y+m", name)
+                scriptChk[i].Value := 1
 
-	; Если нашли хоть одно значение — добавляем заголовок
-	if (scriptsExist) {
-		myGui.AddText("xm+10 y+m", "Скрипты:")
-		
-		scriptChk := Map()
-		scriptInfoBtn := Map()
-		scriptDesc := Map()
+                real := ResolveShortcut(script[i])
+                scriptDesc[i] := GetScriptDescription(real)
 
-		for i, name in scriptName {
-			if (name != "") {
-				; Чекбокс
-				scriptChk[i] := myGui.AddCheckbox("xm+10 y+m", name)
-				scriptChk[i].Value := 1
+                scriptInfoBtn[i] := myGui.AddPicture("yp x+m-10 w16 h16 Icon2", "pics.dll")
+                scriptInfoBtn[i].OnEvent("Click", ShowScriptTooltip.Bind(i))
+            }
+        }
+    }
 
-				; Берём реальный путь (если это .lnk — разворачиваем ярлык)
-				real := ResolveShortcut(script[i])
+    myGui.AddText("xm+10 y+m", "Твики:")
+    chkClearCache := myGui.AddCheckbox("xm+10 y+m", "Очистить кэш")
+    ClearCacheinfoBtn := myGui.AddPicture("yp x+m-10 w16 h16 Icon2", "pics.dll")
+    ClearCacheinfoBtn.OnEvent("Click", ShowClearCacheTooltip)
+    OnMessage(0x0200, OnMouseMove) ; Отслеживание наведения мыши
+    
+    ShowClearCacheTooltip(*) {
+        ToolTip("При запуске игры удалятся папки Cache и Data\Cache")
+        SetTimer(() => ToolTip(""), -5000)
+    }
 
-				; Читаем «шапку» из комментариев в начале файла
-				scriptDesc[i] := GetScriptDescription(real)
+    TooltipHide_OnClick(wParam, lParam, msg, hwnd) {
+        global myGui
+        try cls := WinGetClass("ahk_id " hwnd)
+        catch
+            cls := ""
+        if (cls = "tooltips_class32") {
+            ToolTip("")
+            return
+        }
+        try gui := GuiFromHwnd(hwnd)
+        catch
+            gui := ""
+        if (gui && myGui && gui.Hwnd = myGui.Hwnd) {
+            ToolTip("")
+        }
+    }
 
-				; Кнопка-инфо справа от чекбокса (иконка как у «Очистить кэш»)
-				scriptInfoBtn[i] := myGui.AddPicture("yp x+m-10 w16 h16 Icon2", "pics.dll")
-				scriptInfoBtn[i].OnEvent("Click", ShowScriptTooltip.Bind(i))
-			}
-		}
-	}
-
-	if (gamesExist) {
-		myGui.AddText("xm+10 y+m", "Твики:")
-		chkClearCache := myGui.AddCheckbox("xm+10 y+m", "Очистить кэш")
-		ClearCacheinfoBtn := myGui.AddPicture("yp x+m-10 w16 h16 Icon2", "pics.dll")
-		ClearCacheinfoBtn.OnEvent("Click", ShowClearCacheTooltip)
-		OnMessage(0x201, TooltipHide_OnClick) ; WM_LBUTTONDOWN
-		OnMessage(0x204, TooltipHide_OnClick) ; WM_RBUTTONDOWN
-		OnMessage(0x207, TooltipHide_OnClick) ; WM_MBUTTONDOWN
-		ShowClearCacheTooltip(*) {
-			ToolTip("При запуске игры удалятся папки Cache и Data\Cache")
-			SetTimer(() => ToolTip(""), -5000) ; Убираем подсказку через 3 секунды
-		}
-	}
-
-	TooltipHide_OnClick(wParam, lParam, msg, hwnd) {
-		global myGui
-		; Если кликнули по самому тултипу — скрываем
-		try
-			cls := WinGetClass("ahk_id " hwnd)
-		catch
-			cls := ""
-		if (cls = "tooltips_class32") {
-			ToolTip("")
-			return
-		}
-		; Если клик внутри нашего GUI — тоже скрываем
-		try
-			gui := GuiFromHwnd(hwnd)
-		catch
-			gui := ""
-		if (gui && myGui && gui.Hwnd = myGui.Hwnd) {
-			ToolTip("")
-		}
-	}
-
-	progress := myGui.AddProgress("xm+10 y+m w310 h20 -Smooth")
-	progress.Value := 0
-	progress.Visible := false
-} else {
-    ; === если игр нет ===
-	myGui.SetFont("s10 bold")  ; ставим жирный шрифт (s10 = размер)
-    myGui.AddText("xm", "Игры не заданы.`nОтредактируй ini-файл и перезапусти лаунчер`n(во вкладке настроек)")
-	myGui.SetFont("s10 norm")  ; возвращаем обычный шрифт, чтобы остальные элементы были нормальными
+    progress := myGui.AddProgress("xm+10 y+m w310 h20 -Smooth")
+    progress.Value := 0
+    progress.Visible := false
 }
+
 Tab.UseTab(2) ; Вкладка "Настройки"
 btnOpenIni := myGui.AddButton("xm+10 y+m Section w200 h30", "Открыть INI-файл").OnEvent("Click", (*) => Run(iniPath))
 btnReload := myGui.AddButton("x+10 yp w100 h30", "Перезапустить").OnEvent("Click", (*) => ReloadFunc())
@@ -250,12 +219,14 @@ SaveWindowPosSetting() {
 
 Tab.UseTab(3) ; Вкладка "Инфо"
 
-MyGui.AddPicture("Section w64 h-1 Icon1", "pics.dll")
-myGui.AddText("x+m yp+22", "Kimmy WoW Launcher " scriptVer)
-MyGui.AddPicture("xs w64 h-1 Icon3", "pics.dll")
+MyGui.AddPicture("Section w64 h-1 Icon1", "pics.dll") ; Лого
+myGui.AddText("x+m yp+22", MyGuiTitle " " scriptVer)
+MyGui.AddPicture("xs w64 h-1 Icon3", "pics.dll") ; Гитхаб
 MyGui.AddLink("x+m yp+22", '<a href="https://github.com/KiM38RuS/Kimmy-WoW-Launcher">Страница проекта на GitHub</a>')
-MyGui.AddPicture("xs w64 h-1 Icon4", "pics.dll")
+MyGui.AddPicture("xs w64 h-1 Icon4", "pics.dll") ; Ава
 MyGui.AddLink("x+m yp+22", 'Автор - <a href="https://github.com/KiM38RuS">KiM38RuS</a>')
+;BannerPic := MyGui.AddPicture("xs w150 h-1 Icon5", "pics.dll") ; Баннер
+
 Tab.UseTab() ; Интерфейс, заданный после этой строки будет размещён вне вкладок
 
 ; Восстановление позиции окна при запуске лаунчера
@@ -268,6 +239,19 @@ if (WinPosX != "" && WinPosY != "") {
 }
 
 myGui.Show(showParams)
+
+; Добавление пункта в трей-меню
+A_TrayMenu.Insert("1&", "Показать окно", ShowMainWindow)
+A_TrayMenu.Default := "Показать окно"
+
+ShowMainWindow(*) {
+	myGui.Show(showParams)
+}
+
+/* ; Выравнивание баннера
+MyGui.GetPos(,, &MyGuiWidth)
+BannerPic.GetPos(, &BannerPicY, &BannerPicWidth)
+BannerPic.Move((MyGuiWidth - BannerPicWidth) // 2, BannerPicY) */
 
 ; Сохранение позиции окна при закрытии лаунчера
 myGui.OnEvent("Close", SaveWindowPosition)
@@ -290,24 +274,29 @@ LaunchWoW(index, *) {
     global game, gameBtn, cancelBtn, script, password, progress
     global wowPID, memoryTimerRunning, currentTracker
 
-    ; Проверяем ярлык прежде чем получать exeName
     if !FileExist(game[index]) {
-        GuiError("Ошибка: не найден ярлык`n" game[index])
+        GuiError("Ошибка: не найден файл игры`n" game[index])
         return
     }
-    target := GetShortcutTarget(game[index])
-    if (target = "") {
-        GuiError("Ошибка: ярлык не содержит целевого пути`n" game[index])
-        return
+    
+    target := game[index]
+    ; Если путь всё-таки остался ярлыком, извлекаем цель
+    if (StrLower(SubStr(target, -3)) = "lnk") {
+        target := GetShortcutTarget(target)
+        if (target = "" || !FileExist(target)) {
+            GuiError("Ошибка: ярлык не содержит целевого пути или файл отсутствует`n" game[index])
+            return
+        }
     }
-    exeName := StrSplit(target, "\").Pop()
+    
+    SplitPath(target, &exeName, &gamePath)
     ; Если процесс уже запущен — просто запустить скрипты и переключиться
     if ProcessExist(exeName) {
         wowPID := ProcessExist(exeName)
         RunSelectedScripts()
         A_Clipboard := password[index]
         WinActivate("ahk_pid " wowPID)
-        WinMinimize("Kimmy WoW Launcher") ; Сворачиваем лаунчер
+        WinMinimize(MyGuiTitle) ; Сворачиваем лаунчер
         return
     }
     ; Если процесс не запущен — запуск с отслеживанием
@@ -366,7 +355,7 @@ TrackWoWWindow(index) {
         gameBtn[index].Enabled := true
 
         WinActivate("ahk_pid " wowPID) ; Переключаемся на игру
-        WinMinimize("Kimmy WoW Launcher") ; Сворачиваем лаунчер
+        WinMinimize(MyGuiTitle) ; Сворачиваем лаунчер
     }
 }
 
@@ -420,16 +409,6 @@ GetShortcutTarget(path) {
     shell := ComObject("WScript.Shell")
     sc := shell.CreateShortcut(path)
     return sc.TargetPath
-}
-
-CloseOtherVersions(prefix) {
-    current := A_ScriptName  ; имя текущего скрипта
-
-    for process in ComObjGet("winmgmts:").ExecQuery("Select * from Win32_Process where Name='AutoHotkey64.exe' or Name='AutoHotkey.exe'") {
-        if InStr(process.CommandLine, prefix) && !InStr(process.CommandLine, current) {
-            try ProcessClose(process.ProcessId)
-        }
-    }
 }
 
 ; Функция открытия папки игры
@@ -525,4 +504,192 @@ WrapText(text, maxLen := 70) {
         result .= "`n"   ; ← сохраняем исходный перенос
     }
     return RTrim(result, "`n") ; убираем последний пустой
+}
+
+; === Меню настройки слота ===
+OpenSettingsMenu(index, isNew, *) {
+    global iniPath, myGui, gameName, password, game, script, scriptName
+
+    editGui := Gui("+Owner" myGui.Hwnd " +ToolWindow", "Настройка слота " index)
+    editGui.OnEvent("Escape", (*) => (myGui.Opt("-Disabled"), editGui.Destroy()))
+    editGui.OnEvent("Close", (*) => (myGui.Opt("-Disabled"), editGui.Destroy()))
+    
+    editGui.AddText("xm ym+5 w60", "Название:")
+    editName := editGui.AddEdit("x+5 yp w240", gameName[index])
+    
+    editGui.AddText("xm y+5 w60", "Файл игры:")
+    editPath := editGui.AddEdit("r3 x+5 yp w190", game[index])
+    btnBrowseGame := editGui.AddButton("x+5 yp w45", "Обзор")
+    btnBrowseGame.OnEvent("Click", (*) => BrowseFile(editPath, editName, "Исполняемые файлы и Ярлыки (*.exe; *.lnk)"))
+    
+    editGui.AddText("xm y+29 w60", "Пароль:")
+    editPass := editGui.AddEdit("x+5 yp w240 Password", password[index])
+    
+    ; Кнопки управления
+    if (isNew) {
+        ; Если слот новый, делаем кнопку "Сохранить" на всю ширину
+        btnSave := editGui.AddButton("xm y+5 w306 h30", "Добавить игру")
+    } else {
+        ; Если слот редактируется, рисуем две кнопки в ряд
+        btnSave := editGui.AddButton("xm y+5 w148 h30", "Сохранить")
+        
+        btnDelete := editGui.AddButton("x+10 yp w148 h30", "Удалить")
+        btnDelete.OnEvent("Click", ClearSlotSettings.Bind(index, editGui))
+    }
+    
+    btnSave.OnEvent("Click", SaveSlotSettings.Bind(index, editGui, editName, editPath, editPass))
+    
+    myGui.Opt("+Disabled") ; Блокируем главное окно, пока открыты настройки
+    editGui.Show()
+}
+
+BrowseFile(editCtrl, nameCtrl, filter) {
+    ; Определяем начальную папку
+    startDir := A_Desktop ; По умолчанию Рабочий стол
+    
+    if DirExist("D:\Games")
+        startDir := "D:\Games"
+    else if DirExist("C:\Games")
+        startDir := "C:\Games"
+
+    ; Вызываем окно выбора файла    
+    filePath := FileSelect(3, startDir, "Выберите файл", filter)
+    if (filePath != "") {
+        ; Если выбран ярлык, сразу разворачиваем его в .exe
+        if (StrLower(SubStr(filePath, -3)) = "lnk") {
+            try {
+                tgt := GetShortcutTarget(filePath)
+                if (tgt != "" && FileExist(tgt))
+                    filePath := tgt
+            }
+        }
+        
+        editCtrl.Value := filePath
+        
+        ; Умный парсинг названия для WoW
+        if (nameCtrl != "") {
+            SplitPath(filePath, , , &fileExt, &outNameNoExt)
+            
+            if (StrLower(fileExt) = "exe") {
+                if GetWowVersionInfo(filePath, &smartName) {
+                    nameCtrl.Value := smartName
+                    return
+                }
+            }
+            
+            ; Если не удалось получить инфу о WoW, используем стандартное имя
+            if (nameCtrl.Value == "")
+                nameCtrl.Value := outNameNoExt
+        }
+    }
+}
+
+; Функция для чтения версии и описания WoW-файла напрямую из свойств Windows
+GetWowVersionInfo(filePath, &outName) {
+    outName := ""
+    try {
+        fileVer := FileGetVersion(filePath)
+        if !fileVer
+            return false
+        
+        size := DllCall("version.dll\GetFileVersionInfoSize", "Str", filePath, "Ptr", 0, "UInt")
+        if !size
+            return false
+            
+        buf := Buffer(size)
+        if !DllCall("version.dll\GetFileVersionInfo", "Str", filePath, "UInt", 0, "UInt", size, "Ptr", buf)
+            return false
+            
+        if !DllCall("version.dll\VerQueryValue", "Ptr", buf, "Str", "\VarFileInfo\Translation", "Ptr*", &lpTranslate:=0, "UInt*", &cbTranslate:=0)
+            return false
+            
+        langCp := Format("{:04X}{:04X}", NumGet(lpTranslate, 0, "UShort"), NumGet(lpTranslate, 2, "UShort"))
+        
+        if DllCall("version.dll\VerQueryValue", "Ptr", buf, "Str", "\StringFileInfo\" langCp "\FileDescription", "Ptr*", &lpData:=0, "UInt*", &cbData:=0) {
+            fileDesc := StrGet(lpData, cbData, "UTF-16")
+            if InStr(fileDesc, "World of Warcraft") {
+                if RegExMatch(fileVer, "^(\d+\.\d+\.\d+)", &match) {
+                    outName := "WoW " match[1]
+                    return true
+                }
+            }
+        }
+    }
+    return false
+}
+
+SaveSlotSettings(index, editGui, editName, editPath, editPass, *) {
+    global iniPath
+    
+    if (editName.Value == "" || editPath.Value == "") {
+        MsgBox("Поля 'Название' и 'Файл игры' обязательны для заполнения!", "Ошибка", "Iconx")
+        return
+    }
+    
+    IniWrite(editName.Value, iniPath, "Games", "gameName" index)
+    IniWrite(editPass.Value, iniPath, "Passwords", "password" index)
+    IniWrite(editPath.Value, iniPath, "GamePaths", "path" index)
+    
+    editGui.Destroy()
+    myGui.Opt("-Disabled")
+    SaveWindowPosition()
+    Reload
+}
+
+ClearSlotSettings(index, editGui, *) {
+    global iniPath
+    result := MsgBox("Ты уверен, что хочешь полностью очистить этот слот?", "Подтверждение", "YesNo Icon?")
+    if (result == "Yes") {
+        IniWrite("", iniPath, "Games", "gameName" index)
+        IniWrite("", iniPath, "Passwords", "password" index)
+        IniWrite("", iniPath, "GamePaths", "path" index)
+        
+        editGui.Destroy()
+        myGui.Opt("-Disabled")
+        SaveWindowPosition()
+        Reload
+    }
+}
+
+; === Функция отображения тултипов при наведении ===
+OnMouseMove(wParam, lParam, msg, hwnd) {
+    static PrevHwnd := 0
+    if (hwnd == PrevHwnd)
+        return
+    PrevHwnd := hwnd
+    
+    try ctrl := GuiCtrlFromHwnd(hwnd)
+    catch {
+        ToolTip()
+        return
+    }
+    
+    if (!ctrl) {
+        ToolTip()
+        return
+    }
+
+    text := ""
+    ; Проверяем, что это наша основная форма
+    if (ctrl.Gui.Title = MyGuiTitle) {
+        if (InStr(ctrl.Text, "+ Добавить")) { ; Подсказка для кнопки добавления новой игры
+            text := "...или любую другую программу =)"
+        } else if (ctrl.Text = "⚙") { ; Подсказка для кнопки настройки (шестерёнки)
+            text := "Настроить параметры запуска и пароль для этого слота"
+        } else if (ctrl.Type = "Button" && ctrl.Text != "" && ctrl.Text != "Отмена" && ctrl.Text != "⚙" && !InStr(ctrl.Text, "+ Добавить") && !InStr(ctrl.Text, "Открыть INI") && !InStr(ctrl.Text, "Перезапустить")) {
+            text := "Нажми правой кнопкой мышки, чтобы открыть папку игры"
+        } else if (ctrl.Type = "CheckBox") {
+            if (ctrl.Text = "Очистить кэш") {
+                text := "При запуске игры удалятся папки Cache и Data\Cache"
+            } else if (ctrl.Text != "Поверх всех окон (требуется перезагрузка)" && ctrl.Text != "Сохранять положение окна при его закрытии") {
+                text := "Нажми на кнопку справа для дополнительной информации"
+            }
+        }
+    }
+    
+    if (text != "") {
+        ToolTip(text)
+    } else {
+        ToolTip()
+    }
 }
