@@ -4,9 +4,9 @@
 ;@Ahk2Exe-SetMainIcon Kimmy_WL_Logo_icofx.ico
 ;@Ahk2Exe-SetName Kimmy WoW Launcher
 ;@Ahk2Exe-SetDescription Лаунчер для разных версий игры World of Warcraft
-;@Ahk2Exe-SetVersion 1.2
+;@Ahk2Exe-SetVersion 1.2.1
 
-scriptVer := "v1.2"
+scriptVer := "v1.2.1"
 iniPath := A_ScriptDir "\KimmyWoWLauncher.ini"
 MyGuiTitle := "Kimmy WoW Launcher"
 
@@ -70,9 +70,13 @@ Loop 5 {
     script.Push(sPath)
 }
 
-; Читаем настройку AlwaysOnTop
-alwaysOnTopVal := IniRead(iniPath, "Settings", "AlwaysOnTop", "0")
+; Читаем настройки из ini-файла
+alwaysOnTopVal := IniRead(iniPath, "Settings", "AlwaysOnTop", "0") ; Поверх всех окон
 onTop := (alwaysOnTopVal = "1") ? "+AlwaysOnTop" : ""
+isCacheSaved := IniRead(iniPath, "Settings", "SaveCache", "0") ; Чекбокс очистки кэша
+minOnLaunch := IniRead(iniPath, "Settings", "MinOnLaunch", 0) ; Сворачивание при запуске игры
+minToTray := IniRead(iniPath, "Settings", "MinToTray", 0) ; Сворачивание в трей
+restoreOnClose := IniRead(iniPath, "Settings", "RestoreOnClose", 0) ; Разворачивание после закрытия игры
 
 ; === Интерфейс ===
 myGui := Gui(onTop, MyGuiTitle)
@@ -90,15 +94,15 @@ addedCount := 0
 ; Отрисовка существующих игр
 for i, name in gameName {
     if (name != "") {
-        gameBtn[i] := myGui.AddButton("xm+10 y+m w190 h30", name)
+        gameBtn[i] := myGui.AddButton("xm+10 y+m w190 h30 vGameBtn" i , name)
         editBtn[i] := myGui.AddButton("x+10 yp w30 h30", "⚙")
         cancelBtn[i] := myGui.AddButton("x+10 yp w70 h30", "Отмена")
         cancelBtn[i].Visible := false
 
         gameBtn[i].OnEvent("Click", LaunchWoW.Bind(i))
         gameBtn[i].OnEvent("ContextMenu", OpenGameFolder.Bind(i))
-        cancelBtn[i].OnEvent("Click", CancelWoW.Bind(i))
         editBtn[i].OnEvent("Click", OpenSettingsMenu.Bind(i, false))
+        cancelBtn[i].OnEvent("Click", CancelWoW.Bind(i))
         addedCount++
     }
 }
@@ -119,43 +123,28 @@ if (addedCount < 5) {
 }
 
 if (gamesExist) {
-    ; Проверяем скрипты
-    scriptsExist := false
-    Loop 5 {
-        val := IniRead(iniPath, "Scripts", "scriptName" A_Index, "")
-        if (val != "") {
-            scriptsExist := true
-            break
-        }
-    }
-
-    ; Если нашли хоть одно значение — добавляем заголовок
-    if (scriptsExist) {
-        myGui.AddText("xm+10 y+m", "Скрипты:")
-        
-        scriptChk := Map()
-        scriptInfoBtn := Map()
-        scriptDesc := Map()
-
-        for i, name in scriptName {
-            if (name != "") {
-                scriptChk[i] := myGui.AddCheckbox("xm+10 y+m", name)
-                scriptChk[i].Value := 1
-
-                real := ResolveShortcut(script[i])
-                scriptDesc[i] := GetScriptDescription(real)
-
-                scriptInfoBtn[i] := myGui.AddPicture("yp x+m-10 w16 h16 Icon2", "pics.dll")
-                scriptInfoBtn[i].OnEvent("Click", ShowScriptTooltip.Bind(i))
-            }
-        }
-    }
-
+    myGui.AddText("xm+10 y+m", "Скрипты:")
+    
+    ; --- Встроенный модуль WoW alt+Tab fix ---
+    global chkAltTabFix := myGui.AddCheckbox("xm+10 y+m", "Автокликер, анти-альттаб")
+    
+    ; Восстанавливаем состояние чекбокса из INI
+    altTabFixVal := IniRead(iniPath, "Settings", "AltTabFix", "0")
+    chkAltTabFix.Value := altTabFixVal
+    chkAltTabFix.OnEvent("Click", (*) => IniWrite(chkAltTabFix.Value ? "1" : "0", iniPath, "Settings", "AltTabFix"))
+    
+    SetTimer(WatchWindow, 500) ; Запускаем таймер слежения за окном WoW
+    
     myGui.AddText("xm+10 y+m", "Твики:")
-    chkClearCache := myGui.AddCheckbox("xm+10 y+m", "Очистить кэш")
-    ClearCacheinfoBtn := myGui.AddPicture("yp x+m-10 w16 h16 Icon2", "pics.dll")
-    ClearCacheinfoBtn.OnEvent("Click", ShowClearCacheTooltip)
+    global chkClearCache := myGui.AddCheckbox("xm+10 y+m", "Очистить кэш")
+    ; Если режим сохранения включен, восстанавливаем значение из INI
+    if (isCacheSaved = "1") {
+        chkClearCache.Value := IniRead(iniPath, "Settings", "CacheValue", "0")
+    }
+    ; Вешаем обработчик клика на чекбокс
+    chkClearCache.OnEvent("Click", OnCacheClick)
     OnMessage(0x0200, OnMouseMove) ; Отслеживание наведения мыши
+    OnMessage(0x0006, OnWindowDeactivate) ; Отслеживаем деактивацию окна (сворачивание, Alt+TAB)
     
     ShowClearCacheTooltip(*) {
         ToolTip("При запуске игры удалятся папки Cache и Data\Cache")
@@ -185,37 +174,48 @@ if (gamesExist) {
 }
 
 Tab.UseTab(2) ; Вкладка "Настройки"
+; Кнопка открытия ini-файла
 btnOpenIni := myGui.AddButton("xm+10 y+m Section w200 h30", "Открыть INI-файл").OnEvent("Click", (*) => Run(iniPath))
+; Кнопка перезапуска скрипта
 btnReload := myGui.AddButton("x+10 yp w100 h30", "Перезапустить").OnEvent("Click", (*) => ReloadFunc())
 ReloadFunc() {
 	SaveWindowPosition
 	Reload
 }
-; Чекбокс с сохранением состояния
+; Чекбокс с сохранением состояния окна лаунчера
 onTopCB := myGui.AddCheckBox("xs vOnTop", "Поверх всех окон (требуется перезагрузка)")
 onTopCB.Value := alwaysOnTopVal   ; восстанавливаем последнее значение
-
-; Обработчик клика по чекбоксу
 onTopCB.OnEvent("Click", (*) => SaveAlwaysOnTop())
-
 SaveAlwaysOnTop() {
     global onTopCB, iniPath
     newVal := onTopCB.Value ? "1" : "0"
     IniWrite(newVal, iniPath, "Settings", "AlwaysOnTop")
 }
-
 ; Чекбокс "Сохранять положение окна"
 savePosVal := IniRead(iniPath, "Settings", "SaveWindowPos", "0")
 savePosCB := myGui.AddCheckBox("xs vSavePos", "Сохранять положение окна при его закрытии")
 savePosCB.Value := savePosVal
-
 savePosCB.OnEvent("Click", (*) => SaveWindowPosSetting())
-
 SaveWindowPosSetting() {
     global savePosCB, iniPath
     newVal := savePosCB.Value ? "1" : "0"
     IniWrite(newVal, iniPath, "Settings", "SaveWindowPos")
 }
+; Чекбоксы сворачивания/разворачивания окна лаунчера
+global minOnLaunchCB, minToTrayCB, ;restoreOnCloseCB
+; Основной чекбокс
+minOnLaunchCB := myGui.Add("Checkbox", "Checked" minOnLaunch, "Сворачивать лаунчер при запуске игры")
+minOnLaunchCB.OnEvent("Click", (cb, *) => (
+    IniWrite(cb.Value, iniPath, "Settings", "MinOnLaunch"),
+    /* minToTrayCB.Enabled := restoreOnCloseCB.Enabled := cb.Value */
+    minToTrayCB.Enabled := cb.Value
+))
+; Дочерний: Сворачивать в трей
+minToTrayCB := myGui.Add("Checkbox", "xp+20 y+5 Checked" minToTray " Disabled" (!minOnLaunch), "Сворачивать в трей")
+minToTrayCB.OnEvent("Click", (cb, *) => IniWrite(cb.Value, iniPath, "Settings", "MinToTray"))
+/* ; Дочерний: Разворачивать после закрытия
+restoreOnCloseCB := myGui.Add("Checkbox", "xp y+5 Checked" restoreOnClose " Disabled" (!minOnLaunch), "Разворачиваться после закрытия игры")
+restoreOnCloseCB.OnEvent("Click", (cb, *) => IniWrite(cb.Value, iniPath, "Settings", "RestoreOnClose")) */
 
 Tab.UseTab(3) ; Вкладка "Инфо"
 
@@ -238,15 +238,15 @@ if (WinPosX != "" && WinPosY != "") {
     showParams := "x" WinPosX " y" WinPosY
 }
 
-myGui.Show(showParams)
+ShowMainWindow(*) {
+	myGui.Show(showParams)
+}
+
+ShowMainWindow
 
 ; Добавление пункта в трей-меню
 A_TrayMenu.Insert("1&", "Показать окно", ShowMainWindow)
 A_TrayMenu.Default := "Показать окно"
-
-ShowMainWindow(*) {
-	myGui.Show(showParams)
-}
 
 /* ; Выравнивание баннера
 MyGui.GetPos(,, &MyGuiWidth)
@@ -296,11 +296,16 @@ LaunchWoW(index, *) {
         RunSelectedScripts()
         A_Clipboard := password[index]
         WinActivate("ahk_pid " wowPID)
-        WinMinimize(MyGuiTitle) ; Сворачиваем лаунчер
+        if (minOnLaunchCB.Value) {
+            if (minToTrayCB.Value)
+                myGui.Hide()
+            else
+            WinMinimize("ahk_id " myGui.Hwnd)
+        }
         return
     }
     ; Если процесс не запущен — запуск с отслеживанием
-    gameBtn[index].Enabled := false ; Делаем кнопку иргы неактивной
+    gameBtn[index].Enabled := false ; Делаем кнопку игры неактивной
 	gamePath := StrReplace(target, "\" exeName)
 	cache1 := gamePath "\Cache"
 	cache2 := gamePath "\Data\Cache"
@@ -327,19 +332,36 @@ LaunchWoW(index, *) {
 TrackWoWWindow(index) {
     global wowPID, progress, cancelBtn, gameBtn, memoryTimerRunning, script, password, currentTracker
 
-    if !ProcessExist(wowPID) {
-        SetTimer(currentTracker, 0)
+    ; Проверяем, существует ли ещё процесс игры
+    if !ProcessExist(wowPID) { ; если процесс игры уже закрылся
+		MsgBox("Игра закрылась", "Дебаг", )
+        ; Останавливаем таймер
+        if (currentTracker)
+            SetTimer(currentTracker, 0)
+        
+        ; Сбрасываем состояние интерфейса
         memoryTimerRunning := false
+        gameBtn[index].Enabled := true
+        gameBtn[index].SetFont("norm") ; Возвращаем обычный шрифт
+        
+        cancelBtn[index].Visible := false
+        cancelBtn[index].Text := "Отмена" ; Возвращаем исходный текст
+        
         progress.Visible := false
-		cancelBtn[index].Visible := false
-		gameBtn[index].Enabled := true
-        return
+        wowPID := 0
+        ShowMainWindow
+		/* if (restoreOnCloseCB.Value) {
+            if (minToTrayCB.Value)
+                ShowMainWindow
+            else
+                WinRestore("ahk_id " myGui.Hwnd)
+        } */
     }
 
     mem := GetProcessMemoryMB(wowPID)
     progress.Value := Min(100, Round((mem / 355) * 100))
 
-    if WinExist("ahk_pid " wowPID) {
+    if WinExist("ahk_pid " wowPID) { ; если окно игры существует
         SetTimer(currentTracker, 0)
         memoryTimerRunning := false
 
@@ -351,11 +373,18 @@ TrackWoWWindow(index) {
 		
         ; Скрываем прогресс и кнопку Отмена
         progress.Visible := false
-        cancelBtn[index].Visible := false
+		cancelBtn[index].Visible := false
+        ;cancelBtn[index].Text := "Закрыть"
         gameBtn[index].Enabled := true
+        ;gameBtn[index].SetFont("bold")
 
         WinActivate("ahk_pid " wowPID) ; Переключаемся на игру
-        WinMinimize(MyGuiTitle) ; Сворачиваем лаунчер
+        if (minOnLaunchCB.Value) {
+            if (minToTrayCB.Value)
+                myGui.Hide()
+            else
+                WinMinimize("ahk_id " myGui.Hwnd)
+        }
     }
 }
 
@@ -385,7 +414,9 @@ CancelWoW(index, *) {
     memoryTimerRunning := false
     progress.Visible := false
 	cancelBtn[index].Visible := false
+    cancelBtn[index].Text := "Отмена"
 	gameBtn[index].Enabled := true
+    gameBtn[index].SetFont("norm")
 }
 
 ; === Функция GUI-ошибки ===
@@ -413,7 +444,7 @@ GetShortcutTarget(path) {
 
 ; Функция открытия папки игры
 OpenGameFolder(index, *) {
-    target := GetShortcutTarget(game[index])
+    target := game[index]
     if (target = "") {
         GuiError("Ошибка: ярлык не содержит целевого пути`n" game[index])
         return
@@ -477,13 +508,6 @@ GetScriptDescription(path) {
         }
     }
     return (desc != "") ? RTrim(desc, "`n") : "Описание отсутствует."
-}
-
-; Показ тултипа по клику на иконку
-ShowScriptTooltip(index, *) {
-    global scriptDesc
-    txt := WrapText(scriptDesc[index], 70) ; ← ограничение ширины
-    ToolTip(txt)
 }
 
 ; --- Перенос текста по словам ---
@@ -651,6 +675,21 @@ ClearSlotSettings(index, editGui, *) {
     }
 }
 
+OnCacheClick(ctrl, info) {
+    global isCacheSaved, iniPath
+    
+    ; Если клик был с зажатым Shift
+    if GetKeyState("Shift", "P") {
+        isCacheSaved := (isCacheSaved = "1") ? "0" : "1" ; Переключаем режим
+        IniWrite(isCacheSaved, iniPath, "Settings", "SaveCache")
+    }
+    
+    ; Если режим сохранения включен, записываем текущее состояние чекбокса (галочка стоит или нет)
+    if (isCacheSaved = "1") {
+        IniWrite(ctrl.Value, iniPath, "Settings", "CacheValue")
+    }
+}
+
 ; === Функция отображения тултипов при наведении ===
 OnMouseMove(wParam, lParam, msg, hwnd) {
     static PrevHwnd := 0
@@ -672,17 +711,23 @@ OnMouseMove(wParam, lParam, msg, hwnd) {
     text := ""
     ; Проверяем, что это наша основная форма
     if (ctrl.Gui.Title = MyGuiTitle) {
-        if (InStr(ctrl.Text, "+ Добавить")) { ; Подсказка для кнопки добавления новой игры
-            text := "...или любую другую программу =)"
-        } else if (ctrl.Text = "⚙") { ; Подсказка для кнопки настройки (шестерёнки)
-            text := "Настроить параметры запуска и пароль для этого слота"
-        } else if (ctrl.Type = "Button" && ctrl.Text != "" && ctrl.Text != "Отмена" && ctrl.Text != "⚙" && !InStr(ctrl.Text, "+ Добавить") && !InStr(ctrl.Text, "Открыть INI") && !InStr(ctrl.Text, "Перезапустить")) {
-            text := "Нажми правой кнопкой мышки, чтобы открыть папку игры"
+        if (ctrl.Type = "Button") {
+            if InStr(ctrl.Name, "GameBtn") {
+                text := "Нажми правой кнопкой мышки,`nчтобы открыть папку игры"
+            } else if (InStr(ctrl.Text, "+ Добавить")) {
+                text := "...или любую другую программу =)"
+            } else if (ctrl.Text = "⚙") {
+                text := "Настроить параметры запуска`nи пароль для этого слота"
+            }
         } else if (ctrl.Type = "CheckBox") {
             if (ctrl.Text = "Очистить кэш") {
-                text := "При запуске игры удалятся папки Cache и Data\Cache"
-            } else if (ctrl.Text != "Поверх всех окон (требуется перезагрузка)" && ctrl.Text != "Сохранять положение окна при его закрытии") {
-                text := "Нажми на кнопку справа для дополнительной информации"
+                global isCacheSaved
+                stateTxt := (isCacheSaved = "1") ? "вкл." : "выкл."
+                text := "При запуске игры удалятся папки Cache и Data\Cache.`nУдерживай Shift при клике, чтобы запомнить выбор.`n(Сохранение состояния: Сейчас – " stateTxt ")"
+            } else if (ctrl.Text = "Автокликер, анти-альттаб") {
+                text := "● Заменяет нажатие Alt+TAB в окне WoW на просто TAB`n● Включает встроенные горячие клавиши для WoW:`n  • F: Автокликер (-) | F3: Пауза хоткеев`n  • G: Автоудаление предметов высокого качества`n  • Ctrl+F - снять с паузы хоткеи и запустить автокликер"
+            } else if (ctrl.Text = "Сворачивать в трей") {
+                text := "Развернуть окно можно двойным кликом по иконке"
             }
         }
     }
@@ -692,4 +737,212 @@ OnMouseMove(wParam, lParam, msg, hwnd) {
     } else {
         ToolTip()
     }
+}
+
+OnWindowDeactivate(wParam, lParam, msg, hwnd) {
+    ; Если младшее слово wParam равно 0 (WA_INACTIVE), значит окно потеряло активность
+    if ((wParam & 0xFFFF) = 0) {
+        ToolTip() ; Скрываем тултип
+    }
+}
+
+; ==============================================================================
+; === ВСТРОЕННЫЙ МОДУЛЬ: WoW alt+Tab fix ===
+; ==============================================================================
+
+; === Переменные для WoW alt+Tab fix ===
+toggleAutoClicker := false
+indicatorGui := unset
+suspendIndicatorGui := unset
+statusIndicatorGui := unset
+wowTitles := ["World of Warcraft", "Turtle WoW", "WoWCircle"]
+scriptChk := Map()
+
+#HotIf (chkAltTabFix.Value = 1 && IsWoWActive())
+
+*F:: {
+    global toggleAutoClicker
+    if !toggleAutoClicker {
+        toggleAutoClicker := true
+        SetTimer(PressMinus, 100)
+        ShowIndicator("green")
+    } else {
+        StopAutoClicker()
+    }
+}
+
+*Enter:: {
+    Send("{Enter}")
+    StopAutoClicker()
+    ShowIndicator("red")
+    Suspend(1) ; Приостанавливаем скрипт
+}
+
+*.:: {
+    Send(".")
+    StopAutoClicker()
+    ShowIndicator("red")
+    Suspend(1)
+}
+
+*/:: {
+    Send("/")
+    StopAutoClicker()
+    ShowIndicator("red")
+    Suspend(1)
+}
+
+!Tab::Send("{Tab}")
+
+g:: {
+    Send("Удалить")
+    Send("{Enter}")
+}
+
+#SuspendExempt
+F3:: {
+    if (!chkAltTabFix.Value || !IsWoWActive())
+        return
+        
+    Suspend(-1) ; Переключаем Suspend
+    if A_IsSuspended {
+        StopAutoClicker()
+        ShowIndicator("red")
+    } else {
+        HideIndicator("red")
+    }
+}
+
+^*f:: {
+    if (!chkAltTabFix.Value || !IsWoWActive())
+        return
+
+    if A_IsSuspended {
+        Suspend(0) ; Возобновляем
+    }
+    
+    global toggleAutoClicker
+    if !toggleAutoClicker {
+        toggleAutoClicker := true
+        SetTimer(PressMinus, 100)
+        HideIndicator("red")
+        ShowIndicator("green")
+    }
+}
+#SuspendExempt False
+
+#HotIf
+
+; === Функции модуля WoW alt+Tab fix ===
+
+PressMinus() {
+    Send("{Blind}-")
+}
+
+WatchWindow() {
+    global toggleAutoClicker, chkAltTabFix
+    
+    ; Если чекбокс выключен — ничего не делаем, скрываем индикаторы
+    if (!chkAltTabFix.Value) {
+        if toggleAutoClicker
+            StopAutoClicker()
+        HideIndicator("greenring")
+        HideIndicator("green")
+        HideIndicator("red")
+        return
+    }
+
+    if !(IsWoWActive()) && toggleAutoClicker {
+        StopAutoClicker()
+    }
+
+    if IsWoWActive()
+        ShowIndicator("greenring")
+    else
+        HideIndicator("greenring")
+}
+
+StopAutoClicker() {
+    global toggleAutoClicker
+    toggleAutoClicker := false
+    SetTimer(PressMinus, 0)
+    HideIndicator("green")
+}
+
+ShowIndicator(color) {
+    global indicatorGui, suspendIndicatorGui, statusIndicatorGui
+
+    width := 24
+    height := 24
+    x := 0
+    y := A_ScreenHeight - height
+
+    if (color = "green") {
+        if !IsSet(indicatorGui) {
+            indicatorGui := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20 +LastFound")
+            indicatorGui.BackColor := "Lime"
+            indicatorGui.AddText("w" width " h" height " BackgroundLime")
+            region := DllCall("gdi32\CreateEllipticRgn", "int", 0, "int", 0, "int", width, "int", height, "ptr")
+            DllCall("user32\SetWindowRgn", "ptr", indicatorGui.Hwnd, "ptr", region, "int", true)
+        }
+        indicatorGui.Show("x" x " y" y " w" width " h" height " NoActivate")
+
+    } else if (color = "red") {
+        if !IsSet(suspendIndicatorGui) {
+            suspendIndicatorGui := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20 +LastFound")
+            suspendIndicatorGui.BackColor := "Red"
+            suspendIndicatorGui.AddText("w" width " h" height " BackgroundRed")
+            region := DllCall("gdi32\CreateEllipticRgn", "int", 0, "int", 0, "int", width, "int", height, "ptr")
+            DllCall("user32\SetWindowRgn", "ptr", suspendIndicatorGui.Hwnd, "ptr", region, "int", true)
+        }
+        suspendIndicatorGui.Show("x" x " y" y " w" width " h" height " NoActivate")
+
+    } else if (color = "greenring") {
+        if !IsSet(statusIndicatorGui) {
+            statusIndicatorGui := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20 +LastFound")
+            statusIndicatorGui.BackColor := "Lime"
+            statusIndicatorGui.AddText("w" width " h" height " BackgroundLime")
+            
+            outer := DllCall("gdi32\CreateEllipticRgn", "int", 0, "int", 0, "int", width, "int", height, "ptr")
+            margin := 2
+            inner := DllCall("gdi32\CreateEllipticRgn", "int", margin, "int", margin, "int", width - margin, "int", height - margin, "ptr")
+            
+            ring := DllCall("gdi32\CreateRectRgn", "int", 0, "int", 0, "int", 0, "int", 0, "ptr")
+            DllCall("gdi32\CombineRgn", "ptr", ring, "ptr", outer, "ptr", inner, "int", 4)
+
+            DllCall("user32\SetWindowRgn", "ptr", statusIndicatorGui.Hwnd, "ptr", ring, "int", true)
+
+            DllCall("gdi32\DeleteObject", "ptr", outer)
+            DllCall("gdi32\DeleteObject", "ptr", inner)
+        }
+        statusIndicatorGui.Show("x" . x . " y" . y . " w" . width . " h" . height . " NoActivate")
+    }
+}
+
+HideIndicator(color) {
+    global indicatorGui, suspendIndicatorGui, statusIndicatorGui
+    if (color = "green" && IsSet(indicatorGui))
+        indicatorGui.Hide()
+    else if (color = "red" && IsSet(suspendIndicatorGui))
+        suspendIndicatorGui.Hide()
+    else if (color = "greenring" && IsSet(statusIndicatorGui))
+        statusIndicatorGui.Hide()
+}
+
+IsWoWActive() {
+    global wowTitles
+    hwnd := WinExist("A")
+    if !hwnd
+        return false
+
+    class := WinGetClass(hwnd)
+    if !InStr(class, "GxWindowClass")
+        return false
+
+    winTitle := WinGetTitle(hwnd)
+    for t in wowTitles {
+        if InStr(winTitle, t)
+            return true
+    }
+    return false
 }
