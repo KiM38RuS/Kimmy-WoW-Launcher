@@ -4,25 +4,11 @@
 ;@Ahk2Exe-SetMainIcon Kimmy_WL_Logo_icofx.ico
 ;@Ahk2Exe-SetName Kimmy WoW Launcher
 ;@Ahk2Exe-SetDescription Лаунчер для разных версий игры World of Warcraft
-;@Ahk2Exe-SetVersion 1.2.1
+;@Ahk2Exe-SetVersion 1.2.2a
 
-scriptVer := "v1.2.1"
+scriptVer := "v1.2.2a"
 iniPath := A_ScriptDir "\KimmyWoWLauncher.ini"
 MyGuiTitle := "Kimmy WoW Launcher"
-
-;@Ahk2Exe-IgnoreBegin
-; --- УСТАНОВКА ИКОНКИ ---
-IconFile := "Kimmy_WL_Logo_icofx.ico"
-if FileExist(IconFile) {
-    TraySetIcon(IconFile)
-    try {
-        if (hIcon := LoadPicture(IconFile, "w32 h32", &imgType)) {
-            SendMessage(0x0080, 1, hIcon, myGui.Hwnd) ; ICON_BIG
-            SendMessage(0x0080, 0, hIcon, myGui.Hwnd) ; ICON_SMALL
-        }
-    }
-}
-;@Ahk2Exe-IgnoreEnd
 
 ; Проверка существования ini-файла или его создание
 if !FileExist(iniPath) {
@@ -244,6 +230,20 @@ ShowMainWindow(*) {
 
 ShowMainWindow
 
+;@Ahk2Exe-IgnoreBegin
+; --- УСТАНОВКА ИКОНКИ ---
+IconFile := "Kimmy_WL_Logo_icofx.ico"
+if FileExist(IconFile) {
+    TraySetIcon(IconFile)
+    try {
+        if (hIcon := LoadPicture(IconFile, "w32 h32", &imgType)) {
+            SendMessage(0x0080, 1, hIcon, myGui.Hwnd) ; ICON_BIG
+            SendMessage(0x0080, 0, hIcon, myGui.Hwnd) ; ICON_SMALL
+        }
+    }
+}
+;@Ahk2Exe-IgnoreEnd
+
 ; Добавление пункта в трей-меню
 A_TrayMenu.Insert("1&", "Показать окно", ShowMainWindow)
 A_TrayMenu.Default := "Показать окно"
@@ -265,9 +265,16 @@ SaveWindowPosition(*) {
 }
 
 ; === Глобальные переменные ===
-wowPID := 0
-memoryTimerRunning := false
-currentTracker := ""  ; BoundFunc активного трекера
+global wowPID := 0
+global memoryTimerRunning := false
+global currentTracker := ""
+global toggleAutoClicker := false
+global chkAltTabFix  ; ✅ Явно объявляем как global для #HotIf
+
+; Переменные для привязки автокликера к конкретной игре
+global activeGamePID := 0      ; PID игры, запущенной из лаунчера
+global activeGameHwnd := 0     ; HWND окна игры (для точной проверки)
+global activeGameIndex := 0    ; Индекс слота запущенной игры
 
 ; === Основная логика ===
 LaunchWoW(index, *) {
@@ -293,7 +300,10 @@ LaunchWoW(index, *) {
     ; Если процесс уже запущен — просто запустить скрипты и переключиться
     if ProcessExist(exeName) {
         wowPID := ProcessExist(exeName)
-        RunSelectedScripts()
+        ; Обновляем данные активной игры
+        activeGamePID := wowPID
+        activeGameIndex := index
+        activeGameHwnd := WinExist("ahk_pid " wowPID)
         A_Clipboard := password[index]
         WinActivate("ahk_pid " wowPID)
         if (minOnLaunchCB.Value) {
@@ -321,6 +331,10 @@ LaunchWoW(index, *) {
     while !ProcessExist(exeName) ; Ждём, пока процесс игры не запустится
         Sleep 100
     wowPID := ProcessExist(exeName)
+    activeGamePID := wowPID ; Сохраняем данные для привязки автокликера
+    activeGameIndex := index
+    WinWait("ahk_pid " wowPID, , 10) ; Ждём появления окна и сохраняем его HWND
+    activeGameHwnd := WinExist("ahk_pid " wowPID)
     cancelBtn[index].Visible := true ; Делаем кнопку Отмена видимой
     if !memoryTimerRunning {
         currentTracker := TrackWoWWindow.Bind(index)
@@ -334,7 +348,6 @@ TrackWoWWindow(index) {
 
     ; Проверяем, существует ли ещё процесс игры
     if !ProcessExist(wowPID) { ; если процесс игры уже закрылся
-		MsgBox("Игра закрылась", "Дебаг", )
         ; Останавливаем таймер
         if (currentTracker)
             SetTimer(currentTracker, 0)
@@ -349,6 +362,10 @@ TrackWoWWindow(index) {
         
         progress.Visible := false
         wowPID := 0
+        ; Сбрасываем привязку автокликера
+        activeGamePID := 0
+        activeGameHwnd := 0
+        activeGameIndex := 0
         ShowMainWindow
 		/* if (restoreOnCloseCB.Value) {
             if (minToTrayCB.Value)
@@ -364,9 +381,6 @@ TrackWoWWindow(index) {
     if WinExist("ahk_pid " wowPID) { ; если окно игры существует
         SetTimer(currentTracker, 0)
         memoryTimerRunning := false
-
-        ; Запуск выбранных скриптов
-        RunSelectedScripts()
 
         ; Копируем пароль
         A_Clipboard := password[index]
@@ -388,28 +402,11 @@ TrackWoWWindow(index) {
     }
 }
 
-RunSelectedScripts() {
-    global scriptName, script, scriptChk
-    for i, name in scriptName {
-        if (name != "" && scriptChk.Has(i) && scriptChk[i].Value = 1) {
-            if FileExist(script[i]) {
-                Run script[i]
-            } else {
-                GuiError("Ошибка: не найден ярлык`n" script[i])
-                return
-            }
-        }
-    }
-}
-
 CancelWoW(index, *) {
     global wowPID, progress, cancelBtn, gameBtn, memoryTimerRunning, currentTracker
 
     if wowPID && ProcessExist(wowPID)
         ProcessClose(wowPID)
-
-    if currentTracker
-        SetTimer(currentTracker, 0)
 
     memoryTimerRunning := false
     progress.Visible := false
@@ -437,9 +434,13 @@ GetProcessMemoryMB(pid) {
 
 ; === Функция получения целевого пути ярлыка ===
 GetShortcutTarget(path) {
-    shell := ComObject("WScript.Shell")
-    sc := shell.CreateShortcut(path)
-    return sc.TargetPath
+    try {
+        shell := ComObject("WScript.Shell")
+        sc := shell.CreateShortcut(path)
+        return sc.TargetPath
+    } catch {
+        return path  ; Вернуть исходный путь при ошибке
+    }
 }
 
 ; Функция открытия папки игры
@@ -532,7 +533,7 @@ WrapText(text, maxLen := 70) {
 
 ; === Меню настройки слота ===
 OpenSettingsMenu(index, isNew, *) {
-    global iniPath, myGui, gameName, password, game, script, scriptName
+    global iniPath, myGui, gameName, password, game
 
     editGui := Gui("+Owner" myGui.Hwnd " +ToolWindow", "Настройка слота " index)
     editGui.OnEvent("Escape", (*) => (myGui.Opt("-Disabled"), editGui.Destroy()))
@@ -751,14 +752,13 @@ OnWindowDeactivate(wParam, lParam, msg, hwnd) {
 ; ==============================================================================
 
 ; === Переменные для WoW alt+Tab fix ===
-toggleAutoClicker := false
 indicatorGui := unset
 suspendIndicatorGui := unset
 statusIndicatorGui := unset
 wowTitles := ["World of Warcraft", "Turtle WoW", "WoWCircle"]
 scriptChk := Map()
 
-#HotIf (chkAltTabFix.Value = 1 && IsWoWActive())
+#HotIf (IsSet(chkAltTabFix) && chkAltTabFix && chkAltTabFix.Value = 1 && IsTargetWoWActive())
 
 *F:: {
     global toggleAutoClicker
@@ -943,6 +943,26 @@ IsWoWActive() {
     for t in wowTitles {
         if InStr(winTitle, t)
             return true
+    }
+    return false
+}
+
+; === Проверка: активно ли окно КОНКРЕТНОЙ запущенной игры ===
+IsTargetWoWActive() {
+    global activeGamePID, activeGameHwnd
+    
+    ; Если игра не запущена через лаунчер — автокликер не активен
+    if (!activeGamePID)
+        return false
+    
+    ; Проверяем, что окно с нужным PID существует и активно
+    if WinActive("ahk_pid " activeGamePID) {
+        ; Дополнительно: проверяем, что это действительно окно WoW (защита от ложных срабатываний)
+        try {
+            class := WinGetClass("ahk_pid " activeGamePID)
+            if InStr(class, "GxWindowClass")  ; Класс окна WoW
+                return true
+        }
     }
     return false
 }
