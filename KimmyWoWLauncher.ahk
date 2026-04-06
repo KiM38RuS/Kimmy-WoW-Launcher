@@ -4,25 +4,11 @@
 ;@Ahk2Exe-SetMainIcon Kimmy_WL_Logo_icofx.ico
 ;@Ahk2Exe-SetName Kimmy WoW Launcher
 ;@Ahk2Exe-SetDescription Лаунчер для разных версий игры World of Warcraft
-;@Ahk2Exe-SetVersion 1.2.1
+;@Ahk2Exe-SetVersion 1.3
 
-scriptVer := "v1.2.1"
+scriptVer := "v1.3"
 iniPath := A_ScriptDir "\KimmyWoWLauncher.ini"
 MyGuiTitle := "Kimmy WoW Launcher"
-
-;@Ahk2Exe-IgnoreBegin
-; --- УСТАНОВКА ИКОНКИ ---
-IconFile := "Kimmy_WL_Logo_icofx.ico"
-if FileExist(IconFile) {
-    TraySetIcon(IconFile)
-    try {
-        if (hIcon := LoadPicture(IconFile, "w32 h32", &imgType)) {
-            SendMessage(0x0080, 1, hIcon, myGui.Hwnd) ; ICON_BIG
-            SendMessage(0x0080, 0, hIcon, myGui.Hwnd) ; ICON_SMALL
-        }
-    }
-}
-;@Ahk2Exe-IgnoreEnd
 
 ; Проверка существования ini-файла или его создание
 if !FileExist(iniPath) {
@@ -42,9 +28,8 @@ if !FileExist(iniPath) {
 gamesExist := false
 gameName   := []
 password   := []
-scriptName := []
 game       := []
-script     := []
+memoryThreshold := [] ; Пороговое значение памяти для каждой игры
 
 Loop 5 {
     i := A_Index
@@ -52,11 +37,8 @@ Loop 5 {
     gameName.Push(gName)
     if (gName != "")
         gamesExist := true
-    
+
     password.Push(IniRead(iniPath, "Passwords", "password" i, ""))
-    
-    sName := IniRead(iniPath, "Scripts", "scriptName" i, "")
-    scriptName.Push(sName)
 
     ; Умное чтение путей: если абсолютный путь не задан, используем старый формат ярлыков на рабочем столе
     gPath := IniRead(iniPath, "GamePaths", "path" i, "")
@@ -64,10 +46,9 @@ Loop 5 {
         gPath := A_Desktop "\" gName ".lnk"
     game.Push(gPath)
 
-    sPath := IniRead(iniPath, "ScriptPaths", "path" i, "")
-    if (sPath == "" && sName != "")
-        sPath := A_Desktop "\" sName ".lnk"
-    script.Push(sPath)
+    ; Читаем пороговое значение памяти для прогресс-бара (по умолчанию 400 МБ)
+    memThreshold := IniRead(iniPath, "MemoryThresholds", "threshold" i, "400")
+    memoryThreshold.Push(Integer(memThreshold))
 }
 
 ; Читаем настройки из ini-файла
@@ -90,6 +71,7 @@ cancelBtn := Map()
 editBtn   := Map() ; Новая карта для кнопок настроек
 
 addedCount := 0
+toggleAutoClicker := true
 
 ; Отрисовка существующих игр
 for i, name in gameName {
@@ -145,28 +127,6 @@ if (gamesExist) {
     chkClearCache.OnEvent("Click", OnCacheClick)
     OnMessage(0x0200, OnMouseMove) ; Отслеживание наведения мыши
     OnMessage(0x0006, OnWindowDeactivate) ; Отслеживаем деактивацию окна (сворачивание, Alt+TAB)
-    
-    ShowClearCacheTooltip(*) {
-        ToolTip("При запуске игры удалятся папки Cache и Data\Cache")
-        SetTimer(() => ToolTip(""), -5000)
-    }
-
-    TooltipHide_OnClick(wParam, lParam, msg, hwnd) {
-        global myGui
-        try cls := WinGetClass("ahk_id " hwnd)
-        catch
-            cls := ""
-        if (cls = "tooltips_class32") {
-            ToolTip("")
-            return
-        }
-        try gui := GuiFromHwnd(hwnd)
-        catch
-            gui := ""
-        if (gui && myGui && gui.Hwnd = myGui.Hwnd) {
-            ToolTip("")
-        }
-    }
 
     progress := myGui.AddProgress("xm+10 y+m w310 h20 -Smooth")
     progress.Value := 0
@@ -179,7 +139,7 @@ btnOpenIni := myGui.AddButton("xm+10 y+m Section w200 h30", "Открыть INI-
 ; Кнопка перезапуска скрипта
 btnReload := myGui.AddButton("x+10 yp w100 h30", "Перезапустить").OnEvent("Click", (*) => ReloadFunc())
 ReloadFunc() {
-	SaveWindowPosition
+	SaveWindowPosition()
 	Reload
 }
 ; Чекбокс с сохранением состояния окна лаунчера
@@ -202,20 +162,19 @@ SaveWindowPosSetting() {
     IniWrite(newVal, iniPath, "Settings", "SaveWindowPos")
 }
 ; Чекбоксы сворачивания/разворачивания окна лаунчера
-global minOnLaunchCB, minToTrayCB, ;restoreOnCloseCB
+global minOnLaunchCB, minToTrayCB, restoreOnCloseCB
 ; Основной чекбокс
 minOnLaunchCB := myGui.Add("Checkbox", "Checked" minOnLaunch, "Сворачивать лаунчер при запуске игры")
 minOnLaunchCB.OnEvent("Click", (cb, *) => (
     IniWrite(cb.Value, iniPath, "Settings", "MinOnLaunch"),
-    /* minToTrayCB.Enabled := restoreOnCloseCB.Enabled := cb.Value */
-    minToTrayCB.Enabled := cb.Value
+    minToTrayCB.Enabled := restoreOnCloseCB.Enabled := cb.Value
 ))
 ; Дочерний: Сворачивать в трей
 minToTrayCB := myGui.Add("Checkbox", "xp+20 y+5 Checked" minToTray " Disabled" (!minOnLaunch), "Сворачивать в трей")
 minToTrayCB.OnEvent("Click", (cb, *) => IniWrite(cb.Value, iniPath, "Settings", "MinToTray"))
-/* ; Дочерний: Разворачивать после закрытия
+; Дочерний: Разворачивать после закрытия
 restoreOnCloseCB := myGui.Add("Checkbox", "xp y+5 Checked" restoreOnClose " Disabled" (!minOnLaunch), "Разворачиваться после закрытия игры")
-restoreOnCloseCB.OnEvent("Click", (cb, *) => IniWrite(cb.Value, iniPath, "Settings", "RestoreOnClose")) */
+restoreOnCloseCB.OnEvent("Click", (cb, *) => IniWrite(cb.Value, iniPath, "Settings", "RestoreOnClose"))
 
 Tab.UseTab(3) ; Вкладка "Инфо"
 
@@ -244,6 +203,20 @@ ShowMainWindow(*) {
 
 ShowMainWindow
 
+;@Ahk2Exe-IgnoreBegin
+; --- УСТАНОВКА ИКОНКИ ---
+IconFile := "Kimmy_WL_Logo_icofx.ico"
+if FileExist(IconFile) {
+    TraySetIcon(IconFile)
+    try {
+        if (hIcon := LoadPicture(IconFile, "w32 h32", &imgType)) {
+            SendMessage(0x0080, 1, hIcon, myGui.Hwnd) ; ICON_BIG
+            SendMessage(0x0080, 0, hIcon, myGui.Hwnd) ; ICON_SMALL
+        }
+    }
+}
+;@Ahk2Exe-IgnoreEnd
+
 ; Добавление пункта в трей-меню
 A_TrayMenu.Insert("1&", "Показать окно", ShowMainWindow)
 A_TrayMenu.Default := "Показать окно"
@@ -253,8 +226,13 @@ MyGui.GetPos(,, &MyGuiWidth)
 BannerPic.GetPos(, &BannerPicY, &BannerPicWidth)
 BannerPic.Move((MyGuiWidth - BannerPicWidth) // 2, BannerPicY) */
 
-; Сохранение позиции окна при закрытии лаунчера
-myGui.OnEvent("Close", SaveWindowPosition)
+; Обработчик закрытия окна: сохранение позиции и выход
+myGui.OnEvent("Close", OnGuiClose)
+OnGuiClose(*) {
+    SaveWindowPosition()
+    ExitApp()
+}
+
 SaveWindowPosition(*) {
     global savePosCB, myGui, iniPath
     if (savePosCB.Value) {
@@ -271,14 +249,14 @@ currentTracker := ""  ; BoundFunc активного трекера
 
 ; === Основная логика ===
 LaunchWoW(index, *) {
-    global game, gameBtn, cancelBtn, script, password, progress
+    global game, gameBtn, cancelBtn, password, progress
     global wowPID, memoryTimerRunning, currentTracker
 
     if !FileExist(game[index]) {
         GuiError("Ошибка: не найден файл игры`n" game[index])
         return
     }
-    
+
     target := game[index]
     ; Если путь всё-таки остался ярлыком, извлекаем цель
     if (StrLower(SubStr(target, -3)) = "lnk") {
@@ -288,12 +266,11 @@ LaunchWoW(index, *) {
             return
         }
     }
-    
+
     SplitPath(target, &exeName, &gamePath)
-    ; Если процесс уже запущен — просто запустить скрипты и переключиться
+    ; Если процесс уже запущен — просто переключиться
     if ProcessExist(exeName) {
         wowPID := ProcessExist(exeName)
-        RunSelectedScripts()
         A_Clipboard := password[index]
         WinActivate("ahk_pid " wowPID)
         if (minOnLaunchCB.Value) {
@@ -330,73 +307,63 @@ LaunchWoW(index, *) {
 }
 
 TrackWoWWindow(index) {
-    global wowPID, progress, cancelBtn, gameBtn, memoryTimerRunning, script, password, currentTracker
+    global wowPID, progress, cancelBtn, gameBtn, memoryTimerRunning, password, currentTracker, memoryThreshold, iniPath
 
     ; Проверяем, существует ли ещё процесс игры
     if !ProcessExist(wowPID) { ; если процесс игры уже закрылся
-		MsgBox("Игра закрылась", "Дебаг", )
         ; Останавливаем таймер
         if (currentTracker)
             SetTimer(currentTracker, 0)
-        
+
         ; Сбрасываем состояние интерфейса
         memoryTimerRunning := false
         gameBtn[index].Enabled := true
         gameBtn[index].SetFont("norm") ; Возвращаем обычный шрифт
-        
+
         cancelBtn[index].Visible := false
         cancelBtn[index].Text := "Отмена" ; Возвращаем исходный текст
-        
+
         progress.Visible := false
         wowPID := 0
-        ShowMainWindow
-		/* if (restoreOnCloseCB.Value) {
+
+        ; Разворачиваем окно, если включена соответствующая опция
+        if (minOnLaunchCB.Value && restoreOnCloseCB.Value) {
             if (minToTrayCB.Value)
-                ShowMainWindow
+                ShowMainWindow()
             else
                 WinRestore("ahk_id " myGui.Hwnd)
-        } */
+        }
+        return
     }
 
     mem := GetProcessMemoryMB(wowPID)
-    progress.Value := Min(100, Round((mem / 355) * 100))
+    if (mem > 0) {
+        progress.Value := Min(100, Round((mem / memoryThreshold[index]) * 100))
+    }
 
     if WinExist("ahk_pid " wowPID) { ; если окно игры существует
-        SetTimer(currentTracker, 0)
-        memoryTimerRunning := false
+        ; Сохраняем текущее значение памяти как порог для этой игры (только один раз)
+        if (progress.Visible) {
+            currentMem := GetProcessMemoryMB(wowPID)
+            if (currentMem > 0) {
+                memoryThreshold[index] := currentMem
+                IniWrite(currentMem, iniPath, "MemoryThresholds", "threshold" index)
+            }
 
-        ; Запуск выбранных скриптов
-        RunSelectedScripts()
+            ; Копируем пароль
+            A_Clipboard := password[index]
 
-        ; Копируем пароль
-        A_Clipboard := password[index]
-		
-        ; Скрываем прогресс и кнопку Отмена
-        progress.Visible := false
-		cancelBtn[index].Visible := false
-        ;cancelBtn[index].Text := "Закрыть"
-        gameBtn[index].Enabled := true
-        ;gameBtn[index].SetFont("bold")
+            ; Скрываем прогресс и кнопку Отмена
+            progress.Visible := false
+            cancelBtn[index].Visible := false
+            gameBtn[index].Enabled := true
 
-        WinActivate("ahk_pid " wowPID) ; Переключаемся на игру
-        if (minOnLaunchCB.Value) {
-            if (minToTrayCB.Value)
-                myGui.Hide()
-            else
-                WinMinimize("ahk_id " myGui.Hwnd)
-        }
-    }
-}
-
-RunSelectedScripts() {
-    global scriptName, script, scriptChk
-    for i, name in scriptName {
-        if (name != "" && scriptChk.Has(i) && scriptChk[i].Value = 1) {
-            if FileExist(script[i]) {
-                Run script[i]
-            } else {
-                GuiError("Ошибка: не найден ярлык`n" script[i])
-                return
+            WinActivate("ahk_pid " wowPID) ; Переключаемся на игру
+            if (minOnLaunchCB.Value) {
+                if (minToTrayCB.Value)
+                    myGui.Hide()
+                else
+                    WinMinimize("ahk_id " myGui.Hwnd)
             }
         }
     }
@@ -427,9 +394,21 @@ GuiError(msg) {
 ; === Получение использования памяти в MB ===
 GetProcessMemoryMB(pid) {
     try {
-        for proc in ComObjGet("winmgmts:").ExecQuery("Select * from Win32_Process where ProcessId=" pid)
-            return Round(proc.WorkingSetSize / 1024 / 1024)
-    } catch {
+        wmi := ComObjGet("winmgmts:")
+        if !wmi {
+            return 0
+        }
+        query := wmi.ExecQuery("Select * from Win32_Process where ProcessId=" pid)
+        if !query {
+            return 0
+        }
+        for proc in query {
+            if (proc.WorkingSetSize) {
+                return Round(proc.WorkingSetSize / 1024 / 1024)
+            }
+        }
+    } catch as err {
+        ; Если WMI недоступен, возвращаем 0
         return 0
     }
     return 0
@@ -532,7 +511,7 @@ WrapText(text, maxLen := 70) {
 
 ; === Меню настройки слота ===
 OpenSettingsMenu(index, isNew, *) {
-    global iniPath, myGui, gameName, password, game, script, scriptName
+    global iniPath, myGui, gameName, password, game
 
     editGui := Gui("+Owner" myGui.Hwnd " +ToolWindow", "Настройка слота " index)
     editGui.OnEvent("Escape", (*) => (myGui.Opt("-Disabled"), editGui.Destroy()))
@@ -570,13 +549,25 @@ OpenSettingsMenu(index, isNew, *) {
 BrowseFile(editCtrl, nameCtrl, filter) {
     ; Определяем начальную папку
     startDir := A_Desktop ; По умолчанию Рабочий стол
-    
-    if DirExist("D:\Games")
-        startDir := "D:\Games"
-    else if DirExist("C:\Games")
-        startDir := "C:\Games"
 
-    ; Вызываем окно выбора файла    
+    ; Если в поле уже указан путь, пытаемся открыть его папку
+    currentPath := editCtrl.Value
+    if (currentPath != "") {
+        SplitPath(currentPath, , &currentDir)
+        if (currentDir != "" && DirExist(currentDir)) {
+            startDir := currentDir
+        }
+    }
+
+    ; Если папка не определена из текущего пути, используем стандартные
+    if (startDir == A_Desktop) {
+        if DirExist("D:\Games")
+            startDir := "D:\Games"
+        else if DirExist("C:\Games")
+            startDir := "C:\Games"
+    }
+
+    ; Вызываем окно выбора файла
     filePath := FileSelect(3, startDir, "Выберите файл", filter)
     if (filePath != "") {
         ; Если выбран ярлык, сразу разворачиваем его в .exe
@@ -587,20 +578,20 @@ BrowseFile(editCtrl, nameCtrl, filter) {
                     filePath := tgt
             }
         }
-        
+
         editCtrl.Value := filePath
-        
+
         ; Умный парсинг названия для WoW
         if (nameCtrl != "") {
             SplitPath(filePath, , , &fileExt, &outNameNoExt)
-            
+
             if (StrLower(fileExt) = "exe") {
                 if GetWowVersionInfo(filePath, &smartName) {
                     nameCtrl.Value := smartName
                     return
                 }
             }
-            
+
             ; Если не удалось получить инфу о WoW, используем стандартное имя
             if (nameCtrl.Value == "")
                 nameCtrl.Value := outNameNoExt
@@ -751,12 +742,10 @@ OnWindowDeactivate(wParam, lParam, msg, hwnd) {
 ; ==============================================================================
 
 ; === Переменные для WoW alt+Tab fix ===
-toggleAutoClicker := false
 indicatorGui := unset
 suspendIndicatorGui := unset
 statusIndicatorGui := unset
 wowTitles := ["World of Warcraft", "Turtle WoW", "WoWCircle"]
-scriptChk := Map()
 
 #HotIf (chkAltTabFix.Value = 1 && IsWoWActive())
 
