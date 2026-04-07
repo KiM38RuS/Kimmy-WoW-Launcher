@@ -3,9 +3,9 @@
 
 ;@Ahk2Exe-SetName Kimmy WoW Launcher
 ;@Ahk2Exe-SetDescription Лаунчер для разных версий игры World of Warcraft
-;@Ahk2Exe-SetVersion 1.4.1
+;@Ahk2Exe-SetVersion 1.4.2
 
-scriptVer := "v1.4.1"
+scriptVer := "v1.4.2"
 iniPath := A_ScriptDir "\KimmyWoWLauncher.ini"
 MyGuiTitle := "Kimmy WoW Launcher"
 
@@ -63,17 +63,19 @@ isCacheSaved := IniRead(iniPath, "Settings", "SaveCache", "0") ; Чекбокс 
 minOnLaunch := IniRead(iniPath, "Settings", "MinOnLaunch", 0) ; Сворачивание при запуске игры
 minToTray := IniRead(iniPath, "Settings", "MinToTray", 0) ; Сворачивание в трей
 restoreOnClose := IniRead(iniPath, "Settings", "RestoreOnClose", 0) ; Разворачивание после закрытия игры
+runIndicatorType := IniRead(iniPath, "Settings", "RunIndicatorType", "1") ; Тип индикации запущенной игры (1-жирный, 2-точка, 3-квадрат)
 
 ; === Интерфейс ===
 myGui := Gui(onTop, MyGuiTitle)
 myGui.SetFont("s10", "Segoe UI")
 
 ; --- Вводим вкладки ---
-; --- Начинаем с первой вкладки 
+; --- Начинаем с первой вкладки
 Tab := MyGui.AddTab3("xm", ["Игры", "Настройки", "Инфо"])
 gameBtn   := Map()
 cancelBtn := Map()
 editBtn   := Map() ; Новая карта для кнопок настроек
+indicatorSquare := Map() ; Карта для зелёных квадратиков
 
 addedCount := 0
 toggleAutoClicker := true
@@ -81,7 +83,17 @@ toggleAutoClicker := true
 ; Отрисовка существующих игр
 for i, name in gameName {
     if (name != "") {
-        gameBtn[i] := myGui.AddButton("xm+10 y+m w190 h30 vGameBtn" i , name)
+        ; Проверяем существование файла игры
+        gameExists := FileExist(game[i])
+
+        ; Зелёный кружок (изначально пустой) или красный, если файл не найден
+        if (gameExists) {
+            indicatorSquare[i] := myGui.AddText("xm+10 y+m w20 h30 c008000 Center 0x200", "○")
+        } else {
+            indicatorSquare[i] := myGui.AddText("xm+10 y+m w20 h30 c800000 Center 0x200", "●")
+        }
+
+        gameBtn[i] := myGui.AddButton("x+0 yp w190 h30 vGameBtn" i , name)
         editBtn[i] := myGui.AddButton("x+10 yp w30 h30", "⚙")
         cancelBtn[i] := myGui.AddButton("x+10 yp w70 h30", "Отмена")
         cancelBtn[i].Visible := false
@@ -104,7 +116,10 @@ if (addedCount < 5) {
         }
     }
     if (emptyIndex > 0) {
-        gameBtn[emptyIndex] := myGui.AddButton("xm+10 y+m w190 h30", "+ Добавить игру...")
+        ; Добавляем невидимый символ для выравнивания
+        indicatorSquare[emptyIndex] := myGui.AddText("xm+10 y+m w20", "")
+
+        gameBtn[emptyIndex] := myGui.AddButton("x+0 yp w190 h30", "+ Добавить игру...")
         gameBtn[emptyIndex].OnEvent("Click", OpenSettingsMenu.Bind(emptyIndex, true))
     }
 }
@@ -180,6 +195,16 @@ minToTrayCB.OnEvent("Click", (cb, *) => IniWrite(cb.Value, iniPath, "Settings", 
 ; Дочерний: Разворачивать после закрытия
 restoreOnCloseCB := myGui.Add("Checkbox", "xp y+5 Checked" restoreOnClose " Disabled" (!minOnLaunch), "Разворачиваться после закрытия игры")
 restoreOnCloseCB.OnEvent("Click", (cb, *) => IniWrite(cb.Value, iniPath, "Settings", "RestoreOnClose"))
+
+; Индикация запущенной игры
+myGui.AddText("xs y+10", "Индикация запущенной игры:")
+global runIndicatorDD
+runIndicatorDD := myGui.AddDropDownList("xs y+5 w310 Choose" (Integer(runIndicatorType) + 1), ["Без индикации", "Жирный текст кнопки", "Жирная точка ● перед именем", "Зелёный кружок слева"])
+runIndicatorDD.OnEvent("Change", (*) => SaveRunIndicatorType())
+SaveRunIndicatorType() {
+    global runIndicatorDD, iniPath
+    IniWrite(runIndicatorDD.Value - 1, iniPath, "Settings", "RunIndicatorType")
+}
 
 Tab.UseTab(3) ; Вкладка "Инфо"
 
@@ -384,6 +409,7 @@ LaunchWoW(index, *) {
     if ProcessExist(exeName) {
         wowPID := ProcessExist(exeName)
         A_Clipboard := password[index]
+        ShowRunIndicator(index) ; Показываем индикацию
         WinActivate("ahk_pid " wowPID)
         if (minOnLaunchCB.Value) {
             if (minToTrayCB.Value)
@@ -426,7 +452,7 @@ TrackWoWWindow(index) {
         ; Сбрасываем состояние интерфейса
         memoryTimerRunning := false
         gameBtn[index].Enabled := true
-        gameBtn[index].SetFont("norm") ; Возвращаем обычный шрифт
+        HideRunIndicator(index) ; Скрываем индикацию
 
         cancelBtn[index].Visible := false
         cancelBtn[index].Text := "Отмена" ; Возвращаем исходный текст
@@ -457,6 +483,9 @@ TrackWoWWindow(index) {
             progress.Visible := false
             cancelBtn[index].Visible := false
             gameBtn[index].Enabled := true
+
+            ; Показываем индикацию запущенной игры
+            ShowRunIndicator(index)
 
             WinActivate("ahk_pid " wowPID) ; Переключаемся на игру
 
@@ -597,6 +626,11 @@ WMI_OnObjectReady(objWbemObject, *) {
             if !IsSet(wmiSink)
                 return
 
+            index := wmiSink.index
+
+            ; Скрываем индикацию запущенной игры
+            HideRunIndicator(index)
+
             ; Разворачиваем окно, если включена соответствующая опция
             if (minOnLaunchCB.Value && restoreOnCloseCB.Value) {
                 if (minToTrayCB.Value)
@@ -624,6 +658,9 @@ CheckWindowState(index) {
     if !ProcessExist(wowPID) {
         ; Процесс закрылся
         SetTimer(, 0)
+
+        ; Скрываем индикацию запущенной игры
+        HideRunIndicator(index)
 
         if (minOnLaunchCB.Value && restoreOnCloseCB.Value) {
             if (minToTrayCB.Value)
@@ -659,7 +696,7 @@ CancelWoW(index, *) {
 	cancelBtn[index].Visible := false
     cancelBtn[index].Text := "Отмена"
 	gameBtn[index].Enabled := true
-    gameBtn[index].SetFont("norm")
+    HideRunIndicator(index) ; Скрываем индикацию
 }
 
 ; === Функция GUI-ошибки ===
@@ -1217,4 +1254,55 @@ IsWoWActive() {
             return true
     }
     return false
+}
+
+; === Функции индикации запущенной игры ===
+ShowRunIndicator(index) {
+    global iniPath, gameBtn, gameName, indicatorSquare
+
+    ; Читаем актуальное значение из INI
+    indicatorType := IniRead(iniPath, "Settings", "RunIndicatorType", "1")
+
+    if (indicatorType = "0") {
+        ; Без индикации
+        return
+    } else if (indicatorType = "1") {
+        ; Жирный текст
+        gameBtn[index].SetFont("bold")
+    } else if (indicatorType = "2") {
+        ; Точка перед именем
+        gameBtn[index].SetFont("bold")
+        gameBtn[index].Text := "● " gameName[index]
+    } else if (indicatorType = "3") {
+        ; Зелёный кружок (эмодзи без изменения цвета)
+        if indicatorSquare.Has(index) {
+            indicatorSquare[index].Opt("c")  ; Сбрасываем цвет на дефолтный
+            indicatorSquare[index].Text := "🟢"
+        }
+    }
+}
+
+HideRunIndicator(index) {
+    global iniPath, gameBtn, gameName, indicatorSquare
+
+    ; Читаем актуальное значение из INI
+    indicatorType := IniRead(iniPath, "Settings", "RunIndicatorType", "1")
+
+    if (indicatorType = "0") {
+        ; Без индикации
+        return
+    } else if (indicatorType = "1") {
+        ; Жирный текст
+        gameBtn[index].SetFont("norm")
+    } else if (indicatorType = "2") {
+        ; Точка перед именем
+        gameBtn[index].SetFont("norm")
+        gameBtn[index].Text := gameName[index]
+    } else if (indicatorType = "3") {
+        ; Зелёный кружок (возвращаем тёмно-зелёный цвет для пустого кружка)
+        if indicatorSquare.Has(index) {
+            indicatorSquare[index].Opt("c008000")  ; Тёмно-зелёный для ○
+            indicatorSquare[index].Text := "○"
+        }
+    }
 }
