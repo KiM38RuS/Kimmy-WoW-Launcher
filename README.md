@@ -22,8 +22,8 @@
 ## 🚀 Установка и запуск
 1. Скачайте последнюю версию в разделе [Releases](https://github.com/KiM38RuS/Kimmy-WoW-Launcher/releases).
 2. Запустите исполняемый файл:
-   - `KimmyWoWLauncher x64.exe` (для 64-битных систем)
-   - Или используйте исходный код `KimmyWoWLauncher.ahk` (требуется установленный [AutoHotkey v2](https://www.autohotkey.com/)).
+	- [`KimmyWoWLauncher.exe`](KimmyWoWLauncher.exe)
+	- или используйте исходный код [`KimmyWoWLauncher.ahk`](KimmyWoWLauncher.ahk) (требуется установленный [AutoHotkey v2](https://www.autohotkey.com/)).
 3. Нажмите на кнопку **"+ Добавить игру"** в свободном слоте.
 4. Выберите исполняемый файл игры и, при необходимости, введите пароль от аккаунта.
 5. Наслаждайтесь игрой!
