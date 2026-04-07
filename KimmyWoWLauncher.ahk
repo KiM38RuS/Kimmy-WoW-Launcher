@@ -3,9 +3,9 @@
 
 ;@Ahk2Exe-SetName Kimmy WoW Launcher
 ;@Ahk2Exe-SetDescription Лаунчер для разных версий игры World of Warcraft
-;@Ahk2Exe-SetVersion 1.4
+;@Ahk2Exe-SetVersion 1.4.1
 
-scriptVer := "v1.4"
+scriptVer := "v1.4.1"
 iniPath := A_ScriptDir "\KimmyWoWLauncher.ini"
 MyGuiTitle := "Kimmy WoW Launcher"
 
@@ -803,7 +803,7 @@ OpenSettingsMenu(index, isNew, *) {
     
     editGui.AddText("xm y+29 w60", "Пароль:")
     editPass := editGui.AddEdit("x+5 yp w240 Password", password[index])
-    
+
     ; Кнопки управления
     if (isNew) {
         ; Если слот новый, делаем кнопку "Сохранить" на всю ширину
@@ -815,9 +815,16 @@ OpenSettingsMenu(index, isNew, *) {
         btnDelete := editGui.AddButton("x+10 yp w148 h30", "Удалить")
         btnDelete.OnEvent("Click", ClearSlotSettings.Bind(index, editGui))
     }
-    
+
     btnSave.OnEvent("Click", SaveSlotSettings.Bind(index, editGui, editName, editPath, editPass))
-    
+
+    ; Обработчик Enter для всех полей ввода
+    editName.OnEvent("Focus", (*) => HotKey("Enter", SaveSlotSettings.Bind(index, editGui, editName, editPath, editPass), "On"))
+    editPath.OnEvent("Focus", (*) => HotKey("Enter", SaveSlotSettings.Bind(index, editGui, editName, editPath, editPass), "On"))
+    editPass.OnEvent("Focus", (*) => HotKey("Enter", SaveSlotSettings.Bind(index, editGui, editName, editPath, editPass), "On"))
+    editGui.OnEvent("Close", (*) => (HotKey("Enter", "Off"), myGui.Opt("-Disabled"), editGui.Destroy()))
+    editGui.OnEvent("Escape", (*) => (HotKey("Enter", "Off"), myGui.Opt("-Disabled"), editGui.Destroy()))
+
     myGui.Opt("+Disabled") ; Блокируем главное окно, пока открыты настройки
     editGui.Show()
 }
