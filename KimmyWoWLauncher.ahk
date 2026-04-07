@@ -1,7 +1,6 @@
 #Requires AutoHotkey v2+
 #SingleInstance Force
 
-;@Ahk2Exe-SetMainIcon Kimmy_WL_Logo_icofx.ico
 ;@Ahk2Exe-SetName Kimmy WoW Launcher
 ;@Ahk2Exe-SetDescription Лаунчер для разных версий игры World of Warcraft
 ;@Ahk2Exe-SetVersion 1.4
@@ -185,23 +184,27 @@ restoreOnCloseCB.OnEvent("Click", (cb, *) => IniWrite(cb.Value, iniPath, "Settin
 Tab.UseTab(3) ; Вкладка "Инфо"
 
 global g_GdiplusToken := 0
+global g_GdiplusReady := false
 
 EnsureGDIPlus() {
-    global g_GdiplusToken
-    if g_GdiplusToken
+    global g_GdiplusToken, g_GdiplusReady
+    if g_GdiplusReady
         return
 
-    si := Buffer(24, 0)  ; хватает и для x64, и для x86
-    NumPut("UInt", 1, si, 0)  ; GdiplusVersion = 1
+    si := Buffer(A_PtrSize = 8 ? 24 : 16, 0)
+    NumPut("UInt", 1, si, 0)
 
-    if DllCall("gdiplus\GdiplusStartup"
-        , "ptr*", &g_GdiplusToken
+    status := DllCall("gdiplus\GdiplusStartup"
+        , "ptr*", g_GdiplusToken
         , "ptr", si
         , "ptr", 0
-        , "uint") != 0
-    {
-        throw Error("Не удалось инициализировать GDI+.")
-    }
+        , "uint")
+
+    if status != 0
+        throw Error("GdiplusStartup failed: " status)
+
+    g_GdiplusReady := true
+    OnExit(CleanupGDIPlus)
 }
 
 LoadImageFromBase64(base64) {
@@ -270,14 +273,15 @@ LoadImageFromBase64(base64) {
 }
 
 CleanupGDIPlus(*) {
-    global g_GdiplusToken
-    if g_GdiplusToken {
-        DllCall("gdiplus\GdiplusShutdown", "ptr", g_GdiplusToken)
-        g_GdiplusToken := 0
-    }
-}
+    global g_GdiplusToken, g_GdiplusReady
+    if !g_GdiplusReady || !g_GdiplusToken
+        return
 
-OnExit(CleanupGDIPlus)
+    token := g_GdiplusToken
+    g_GdiplusToken := 0
+    g_GdiplusReady := false
+    DllCall("gdiplus\GdiplusShutdown", "ptr", token)
+}
 
 ; Загружаем изображения из Base64
 logoPic := LoadImageFromBase64(LOGO_BASE64)
