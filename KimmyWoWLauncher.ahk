@@ -4,15 +4,9 @@
 ;@Ahk2Exe-SetMainIcon Kimmy_WL_Logo_icofx.ico
 ;@Ahk2Exe-SetName Kimmy WoW Launcher
 ;@Ahk2Exe-SetDescription Лаунчер для разных версий игры World of Warcraft
-<<<<<<< Updated upstream
-;@Ahk2Exe-SetVersion 1.3
-
-scriptVer := "v1.3"
-=======
 ;@Ahk2Exe-SetVersion 1.4
 
 scriptVer := "v1.4"
->>>>>>> Stashed changes
 iniPath := A_ScriptDir "\KimmyWoWLauncher.ini"
 MyGuiTitle := "Kimmy WoW Launcher"
 
@@ -357,12 +351,9 @@ SaveWindowPosition(*) {
 wowPID := 0
 memoryTimerRunning := false
 currentTracker := ""  ; BoundFunc активного трекера
-<<<<<<< Updated upstream
-=======
 wmiSink := ""  ; Объект для подписки на WMI события
 wmiStartupSink := ""  ; Объект для отслеживания запуска процесса
 currentGameIndex := 0  ; Индекс текущей запускаемой игры
->>>>>>> Stashed changes
 
 ; === Основная логика ===
 LaunchWoW(index, *) {
@@ -417,18 +408,6 @@ LaunchWoW(index, *) {
     SubscribeToProcessStartup(exeName, index)
 
     Run game[index] ; Запускаем игру
-<<<<<<< Updated upstream
-    while !ProcessExist(exeName) ; Ждём, пока процесс игры не запустится
-        Sleep 100
-    wowPID := ProcessExist(exeName)
-    cancelBtn[index].Visible := true ; Делаем кнопку Отмена видимой
-    if !memoryTimerRunning {
-        currentTracker := TrackWoWWindow.Bind(index)
-        SetTimer(currentTracker, 500)
-        memoryTimerRunning := true
-    }
-=======
->>>>>>> Stashed changes
 }
 
 TrackWoWWindow(index) {
@@ -450,17 +429,6 @@ TrackWoWWindow(index) {
 
         progress.Visible := false
         wowPID := 0
-<<<<<<< Updated upstream
-
-        ; Разворачиваем окно, если включена соответствующая опция
-        if (minOnLaunchCB.Value && restoreOnCloseCB.Value) {
-            if (minToTrayCB.Value)
-                ShowMainWindow()
-            else
-                WinRestore("ahk_id " myGui.Hwnd)
-        }
-=======
->>>>>>> Stashed changes
         return
     }
 
@@ -487,19 +455,14 @@ TrackWoWWindow(index) {
             gameBtn[index].Enabled := true
 
             WinActivate("ahk_pid " wowPID) ; Переключаемся на игру
-<<<<<<< Updated upstream
-=======
 
             ; Сворачиваем лаунчер сразу
->>>>>>> Stashed changes
             if (minOnLaunchCB.Value) {
                 if (minToTrayCB.Value)
                     myGui.Hide()
                 else
                     WinMinimize("ahk_id " myGui.Hwnd)
             }
-<<<<<<< Updated upstream
-=======
 
             ; Останавливаем таймер и подписываемся на WMI события
             if (currentTracker)
@@ -663,7 +626,6 @@ CheckWindowState(index) {
                 ShowMainWindow()
             else
                 WinRestore("ahk_id " myGui.Hwnd)
->>>>>>> Stashed changes
         }
     }
 }
@@ -677,8 +639,6 @@ CancelWoW(index, *) {
     if currentTracker
         SetTimer(currentTracker, 0)
 
-<<<<<<< Updated upstream
-=======
     ; Отписываемся от WMI событий, если они активны
     if IsSet(wmiStartupSink) && wmiStartupSink != "" {
         try wmiStartupSink.Cancel()
@@ -690,7 +650,6 @@ CancelWoW(index, *) {
         wmiSink := ""
     }
 
->>>>>>> Stashed changes
     memoryTimerRunning := false
     progress.Visible := false
 	cancelBtn[index].Visible := false
