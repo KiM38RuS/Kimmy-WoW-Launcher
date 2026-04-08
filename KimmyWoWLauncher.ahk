@@ -3,9 +3,9 @@
 
 ;@Ahk2Exe-SetName Kimmy WoW Launcher
 ;@Ahk2Exe-SetDescription Лаунчер для разных версий игры World of Warcraft
-;@Ahk2Exe-SetVersion 1.4.3
+;@Ahk2Exe-SetVersion 1.4.4
 
-scriptVer := "v1.4.3"
+scriptVer := "v1.4.4"
 iniPath := A_ScriptDir "\KimmyWoWLauncher.ini"
 MyGuiTitle := "Kimmy WoW Launcher"
 
@@ -219,11 +219,7 @@ EnsureGDIPlus() {
     si := Buffer(A_PtrSize = 8 ? 24 : 16, 0)
     NumPut("UInt", 1, si, 0)
 
-    status := DllCall("gdiplus\GdiplusStartup"
-        , "ptr*", g_GdiplusToken
-        , "ptr", si
-        , "ptr", 0
-        , "uint")
+    status := DllCall("gdiplus\GdiplusStartup", "ptr*", g_GdiplusToken, "ptr", si, "ptr", 0, "uint")
 
     if status != 0
         throw Error("GdiplusStartup failed: " status)
@@ -240,29 +236,13 @@ LoadImageFromBase64(base64) {
     base64 := RegExReplace(base64, "^data:image\/[a-zA-Z0-9.+-]+;base64,", "")
 
     cbData := 0
-    if !DllCall("Crypt32\CryptStringToBinaryW"
-        , "str", base64
-        , "uint", 0
-        , "uint", 1
-        , "ptr", 0
-        , "uint*", &cbData
-        , "ptr", 0
-        , "ptr", 0
-        , "int")
+    if !DllCall("Crypt32\CryptStringToBinaryW", "str", base64, "uint", 0, "uint", 1, "ptr", 0, "uint*", &cbData, "ptr", 0, "ptr", 0, "int")
     {
         throw Error("Не удалось определить размер Base64-данных. WinErr=" A_LastError)
     }
 
     bin := Buffer(cbData, 0)
-    if !DllCall("Crypt32\CryptStringToBinaryW"
-        , "str", base64
-        , "uint", 0
-        , "uint", 1
-        , "ptr", bin.Ptr
-        , "uint*", &cbData
-        , "ptr", 0
-        , "ptr", 0
-        , "int")
+    if !DllCall("Crypt32\CryptStringToBinaryW", "str", base64, "uint", 0, "uint", 1, "ptr", bin.Ptr, "uint*", &cbData, "ptr", 0, "ptr", 0, "int")
     {
         throw Error("Не удалось декодировать Base64. WinErr=" A_LastError)
     }
@@ -273,19 +253,12 @@ LoadImageFromBase64(base64) {
 
     try {
         pBitmap := 0
-        status := DllCall("gdiplus\GdipCreateBitmapFromStream"
-            , "ptr", pStream
-            , "ptr*", &pBitmap
-            , "uint")
+        status := DllCall("gdiplus\GdipCreateBitmapFromStream", "ptr", pStream, "ptr*", &pBitmap, "uint")
         if status != 0
             throw Error("GdipCreateBitmapFromStream вернула ошибку: " status)
 
         hBitmap := 0
-        status := DllCall("gdiplus\GdipCreateHBITMAPFromBitmap"
-            , "ptr", pBitmap
-            , "ptr*", &hBitmap
-            , "uint", 0x00FFFFFF
-            , "uint")
+        status := DllCall("gdiplus\GdipCreateHBITMAPFromBitmap", "ptr", pBitmap, "ptr*", &hBitmap, "uint", 0x00FFFFFF, "uint")
         DllCall("gdiplus\GdipDisposeImage", "ptr", pBitmap)
 
         if status != 0
@@ -314,11 +287,13 @@ githubPic := LoadImageFromBase64(GITHUB_BASE64)
 avatarPic := LoadImageFromBase64(AVATAR_BASE64)
 
 MyGui.AddPicture("Section w64 h64").Value := "HBITMAP:" logoPic ; Лого
+myGui.SetFont("s12")
 myGui.AddText("x+m yp+22", MyGuiTitle " " scriptVer)
 MyGui.AddPicture("xs w64 h64").Value := "HBITMAP:" githubPic ; Гитхаб
 MyGui.AddLink("x+m yp+22", '<a href="https://github.com/KiM38RuS/Kimmy-WoW-Launcher">Страница проекта на GitHub</a>')
 MyGui.AddPicture("xs w64 h64").Value := "HBITMAP:" avatarPic ; Ава
 MyGui.AddLink("x+m yp+22", 'Автор - <a href="https://github.com/KiM38RuS">KiM38RuS</a>')
+myGui.SetFont("s10")
 
 Tab.UseTab() ; Интерфейс, заданный после этой строки будет размещён вне вкладок
 
@@ -822,34 +797,37 @@ WrapText(text, maxLen := 70) {
     return RTrim(result, "`n") ; убираем последний пустой
 }
 
-; === Меню настройки слота ===
+; === Окошко настройки слота (ОНС) ===
 OpenSettingsMenu(index, isNew, *) {
     global iniPath, myGui, gameName, password, game
 
     editGui := Gui("+Owner" myGui.Hwnd " +ToolWindow", "Настройка слота " index)
+    editGui.SetFont("s10", "Segoe UI")
     editGui.OnEvent("Escape", (*) => (myGui.Opt("-Disabled"), editGui.Destroy()))
     editGui.OnEvent("Close", (*) => (myGui.Opt("-Disabled"), editGui.Destroy()))
-    
-    editGui.AddText("xm ym+5 w60", "Название:")
+
+    editGui.AddText("xm ym w70 h22 0x200", "Название:")
     editName := editGui.AddEdit("x+5 yp w240", gameName[index])
-    
-    editGui.AddText("xm y+5 w60", "Файл игры:")
-    editPath := editGui.AddEdit("r3 x+5 yp w190", game[index])
-    btnBrowseGame := editGui.AddButton("x+5 yp w45", "Обзор")
+
+    editGui.AddText("xm y+5 w70 h22 0x200", "Файл игры:")
+    editPath := editGui.AddEdit("r3 x+5 yp w176", game[index])
+    btnBrowseGame := editGui.AddButton("x+5 yp w60", "Обзор")
     btnBrowseGame.OnEvent("Click", (*) => BrowseFile(editPath, editName, "Исполняемые файлы и Ярлыки (*.exe; *.lnk)"))
-    
-    editGui.AddText("xm y+29 w60", "Пароль:")
-    editPass := editGui.AddEdit("x+5 yp w240 Password", password[index])
+
+    editGui.AddText("xm y+34 w70 h22 0x200", "Пароль:")
+    editPass := editGui.AddEdit("x+5 yp w206 Password", password[index])
+    btnTogglePass := editGui.AddButton("x+5 yp w30 h25", "👁")
+    btnTogglePass.OnEvent("Click", (*) => TogglePasswordVisibility(editPass, btnTogglePass))
 
     ; Кнопки управления
     if (isNew) {
-        ; Если слот новый, делаем кнопку "Сохранить" на всю ширину
-        btnSave := editGui.AddButton("xm y+5 w306 h30", "Добавить игру")
+        ; Если слот новый, делаем кнопку добавления на всю ширину
+        btnSave := editGui.AddButton("xm y+5 w316 h30", "Добавить игру")
     } else {
         ; Если слот редактируется, рисуем две кнопки в ряд
-        btnSave := editGui.AddButton("xm y+5 w148 h30", "Сохранить")
+        btnSave := editGui.AddButton("xm y+5 w153 h30", "Сохранить")
         
-        btnDelete := editGui.AddButton("x+10 yp w148 h30", "Удалить")
+        btnDelete := editGui.AddButton("x+10 yp w153 h30", "Удалить")
         btnDelete.OnEvent("Click", ClearSlotSettings.Bind(index, editGui))
     }
 
@@ -876,7 +854,45 @@ OpenSettingsMenu(index, isNew, *) {
     editGui.OnEvent("Escape", CleanupEditGui)
 
     myGui.Opt("+Disabled") ; Блокируем главное окно, пока открыты настройки
-    editGui.Show()
+
+    ; Показываем окно, чтобы получить его размеры
+    editGui.Show("Hide")
+
+    ; Получаем координаты и размеры главного окна
+    myGui.GetPos(&mainX, &mainY, &mainW, &mainH)
+
+    ; Получаем размеры окна настроек
+    editGui.GetPos(, , &editW, &editH)
+
+    ; Вычисляем координаты для центрирования
+    centerX := mainX + (mainW - editW) // 2
+    centerY := mainY + (mainH - editH) // 2
+
+    ; Показываем окно в центре
+    editGui.Show("x" centerX " y" centerY)
+}
+
+TogglePasswordVisibility(editPass, btnTogglePass) {
+    static isVisible := Map()
+
+    ; Используем hwnd как ключ для отслеживания состояния каждого поля
+    hwnd := editPass.Hwnd
+
+    if (!isVisible.Has(hwnd))
+        isVisible[hwnd] := false
+
+    ; Переключаем состояние
+    isVisible[hwnd] := !isVisible[hwnd]
+
+    if (isVisible[hwnd]) {
+        ; Показываем пароль
+        editPass.Opt("-Password")
+        btnTogglePass.Text := "🙈"
+    } else {
+        ; Скрываем пароль
+        editPass.Opt("+Password")
+        btnTogglePass.Text := "👁"
+    }
 }
 
 BrowseFile(editCtrl, nameCtrl, filter) {
@@ -967,7 +983,7 @@ GetWowVersionInfo(filePath, &outName) {
 }
 
 SaveSlotSettings(index, editGui, editName, editPath, editPass, *) {
-    global iniPath
+    global iniPath, gameName, password, game
 
     ; Проверяем, что окно и контролы ещё существуют
     try {
@@ -983,11 +999,24 @@ SaveSlotSettings(index, editGui, editName, editPath, editPass, *) {
         MsgBox("Поля 'Название' и 'Файл игры' обязательны для заполнения!", "Ошибка", "Iconx")
         return
     }
-    
+
+    ; Проверяем, изменились ли данные
+    oldName := gameName[index]
+    oldPath := game[index]
+    oldPass := password[index]
+
+    if (editName.Value == oldName && editPath.Value == oldPath && editPass.Value == oldPass) {
+        ; Данные не изменились - просто закрываем окно
+        editGui.Destroy()
+        myGui.Opt("-Disabled")
+        return
+    }
+
+    ; Данные изменились - сохраняем и перезагружаем
     IniWrite(editName.Value, iniPath, "Games", "gameName" index)
     IniWrite(editPass.Value, iniPath, "Passwords", "password" index)
     IniWrite(editPath.Value, iniPath, "GamePaths", "path" index)
-    
+
     editGui.Destroy()
     myGui.Opt("-Disabled")
     SaveWindowPosition()
@@ -1027,10 +1056,22 @@ OnCacheClick(ctrl, info) {
 ; === Функция отображения тултипов при наведении ===
 OnMouseMove(wParam, lParam, msg, hwnd) {
     static PrevHwnd := 0
+
+    ; Проверяем, активно ли окно, которому принадлежит элемент
+    try {
+        ctrl := GuiCtrlFromHwnd(hwnd)
+        if (ctrl && ctrl.Gui.Hwnd != WinExist("A")) {
+            ; Окно неактивно - скрываем подсказку и сбрасываем состояние
+            ToolTip()
+            PrevHwnd := 0
+            return
+        }
+    }
+
     if (hwnd == PrevHwnd)
         return
     PrevHwnd := hwnd
-    
+
     try ctrl := GuiCtrlFromHwnd(hwnd)
     catch {
         ToolTip()
@@ -1062,6 +1103,13 @@ OnMouseMove(wParam, lParam, msg, hwnd) {
                 text := "● Заменяет нажатие Alt+TAB в окне WoW на просто TAB`n● Включает встроенные горячие клавиши для WoW:`n  • F: Автокликер (-) | F3: Пауза хоткеев`n  • G: Автоудаление предметов высокого качества`n  • Ctrl+F - снять с паузы хоткеи и запустить автокликер"
             } else if (ctrl.Text = "Сворачивать в трей") {
                 text := "Развернуть окно можно двойным кликом по иконке"
+            }
+        }
+    } else if (InStr(ctrl.Gui.Title, "Настройка слота")) {
+        ; Подсказки для окна настройки слота
+        if (ctrl.Type = "Button") {
+            if (ctrl.Text = "👁" || ctrl.Text = "🙈") {
+                text := "Показать/скрыть пароль"
             }
         }
     }
@@ -1329,3 +1377,7 @@ HideRunIndicator(index) {
         }
     }
 }
+
+; === Горячие клавиши для перезапуска скрипта ===
+F5::ReloadFunc()
+^r::ReloadFunc()
