@@ -3,9 +3,9 @@
 
 ;@Ahk2Exe-SetName Kimmy WoW Launcher
 ;@Ahk2Exe-SetDescription Лаунчер для разных версий игры World of Warcraft
-;@Ahk2Exe-SetVersion 1.4.2
+;@Ahk2Exe-SetVersion 1.4.3
 
-scriptVer := "v1.4.2"
+scriptVer := "v1.4.3"
 iniPath := A_ScriptDir "\KimmyWoWLauncher.ini"
 MyGuiTitle := "Kimmy WoW Launcher"
 
@@ -855,12 +855,25 @@ OpenSettingsMenu(index, isNew, *) {
 
     btnSave.OnEvent("Click", SaveSlotSettings.Bind(index, editGui, editName, editPath, editPass))
 
-    ; Обработчик Enter для всех полей ввода
-    editName.OnEvent("Focus", (*) => HotKey("Enter", SaveSlotSettings.Bind(index, editGui, editName, editPath, editPass), "On"))
-    editPath.OnEvent("Focus", (*) => HotKey("Enter", SaveSlotSettings.Bind(index, editGui, editName, editPath, editPass), "On"))
-    editPass.OnEvent("Focus", (*) => HotKey("Enter", SaveSlotSettings.Bind(index, editGui, editName, editPath, editPass), "On"))
-    editGui.OnEvent("Close", (*) => (HotKey("Enter", "Off"), myGui.Opt("-Disabled"), editGui.Destroy()))
-    editGui.OnEvent("Escape", (*) => (HotKey("Enter", "Off"), myGui.Opt("-Disabled"), editGui.Destroy()))
+    ; Обработчик Enter для окна настроек
+    saveHandler := SaveSlotSettings.Bind(index, editGui, editName, editPath, editPass)
+
+    ; Устанавливаем контекстно-зависимую горячую клавишу только для этого окна
+    HotIfWinActive("ahk_id " editGui.Hwnd)
+    HotKey("Enter", saveHandler, "On")
+    HotIfWinActive()
+
+    ; Функция очистки при закрытии окна
+    CleanupEditGui := (*) => (
+        HotIfWinActive("ahk_id " editGui.Hwnd),
+        HotKey("Enter", "Off"),
+        HotIfWinActive(),
+        myGui.Opt("-Disabled"),
+        editGui.Destroy()
+    )
+
+    editGui.OnEvent("Close", CleanupEditGui)
+    editGui.OnEvent("Escape", CleanupEditGui)
 
     myGui.Opt("+Disabled") ; Блокируем главное окно, пока открыты настройки
     editGui.Show()
@@ -955,7 +968,17 @@ GetWowVersionInfo(filePath, &outName) {
 
 SaveSlotSettings(index, editGui, editName, editPath, editPass, *) {
     global iniPath
-    
+
+    ; Проверяем, что окно и контролы ещё существуют
+    try {
+        if (!IsObject(editGui) || !IsObject(editName) || !IsObject(editPath) || !IsObject(editPass))
+            return
+        if (!editGui.Hwnd)
+            return
+    } catch {
+        return
+    }
+
     if (editName.Value == "" || editPath.Value == "") {
         MsgBox("Поля 'Название' и 'Файл игры' обязательны для заполнения!", "Ошибка", "Iconx")
         return
