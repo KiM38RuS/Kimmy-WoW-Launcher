@@ -86,16 +86,16 @@ for i, name in gameName {
         ; Проверяем существование файла игры
         gameExists := FileExist(game[i])
 
-        ; Зелёный кружок (изначально пустой) или красный, если файл не найден
+        ; Индикатор статуса: ✔ (готов/зелёный) или ✖ (ошибка/красный)
         if (gameExists) {
-            indicatorSquare[i] := myGui.AddText("xm+10 y+m w20 h30 c008000 Center 0x200", "○")
+            indicatorSquare[i] := myGui.AddText("xm y+m w20 h30 cGreen Center 0x200", "✔")
         } else {
-            indicatorSquare[i] := myGui.AddText("xm+10 y+m w20 h30 c800000 Center 0x200", "●")
+            indicatorSquare[i] := myGui.AddText("xm y+m w20 h30 cRed Center 0x200", "✖")
         }
 
         gameBtn[i] := myGui.AddButton("x+0 yp w190 h30 vGameBtn" i , name)
-        editBtn[i] := myGui.AddButton("x+10 yp w30 h30", "⚙")
-        cancelBtn[i] := myGui.AddButton("x+10 yp w70 h30", "Отмена")
+        editBtn[i] := myGui.AddButton("x+5 yp w30 h30", "⚙")
+        cancelBtn[i] := myGui.AddButton("x+5 yp w70 h30", "Отмена")
         cancelBtn[i].Visible := false
 
         gameBtn[i].OnEvent("Click", LaunchWoW.Bind(i))
@@ -117,7 +117,7 @@ if (addedCount < 5) {
     }
     if (emptyIndex > 0) {
         ; Добавляем невидимый символ для выравнивания
-        indicatorSquare[emptyIndex] := myGui.AddText("xm+10 y+m w20", "")
+        indicatorSquare[emptyIndex] := myGui.AddText("xm y+m w20", "")
 
         gameBtn[emptyIndex] := myGui.AddButton("x+0 yp w190 h30", "+ Добавить игру...")
         gameBtn[emptyIndex].OnEvent("Click", OpenSettingsMenu.Bind(emptyIndex, true))
@@ -199,7 +199,7 @@ restoreOnCloseCB.OnEvent("Click", (cb, *) => IniWrite(cb.Value, iniPath, "Settin
 ; Индикация запущенной игры
 myGui.AddText("xs y+10", "Индикация запущенной игры:")
 global runIndicatorDD
-runIndicatorDD := myGui.AddDropDownList("xs y+5 w310 Choose" (Integer(runIndicatorType) + 1), ["Без индикации", "Жирный текст кнопки", "Жирная точка ● перед именем", "Зелёный кружок слева"])
+runIndicatorDD := myGui.AddDropDownList("xs y+5 w310 Choose" (Integer(runIndicatorType) + 1), ["Без индикации", "Жирный текст кнопки", "Жирная точка ● перед именем", "Символы статуса слева (✔▶✖)"])
 runIndicatorDD.OnEvent("Change", (*) => SaveRunIndicatorType())
 SaveRunIndicatorType() {
     global runIndicatorDD, iniPath
@@ -1345,16 +1345,16 @@ ShowRunIndicator(index) {
         gameBtn[index].SetFont("bold")
         gameBtn[index].Text := "● " gameName[index]
     } else if (indicatorType = "3") {
-        ; Зелёный кружок (эмодзи без изменения цвета)
+        ; Символ ▶ (запущено) синего цвета
         if indicatorSquare.Has(index) {
-            indicatorSquare[index].Opt("c")  ; Сбрасываем цвет на дефолтный
-            indicatorSquare[index].Text := "🟢"
+            indicatorSquare[index].Opt("cBlue")
+            indicatorSquare[index].Text := "▶"
         }
     }
 }
 
 HideRunIndicator(index) {
-    global iniPath, gameBtn, gameName, indicatorSquare
+    global iniPath, gameBtn, gameName, indicatorSquare, game
 
     ; Читаем актуальное значение из INI
     indicatorType := IniRead(iniPath, "Settings", "RunIndicatorType", "1")
@@ -1370,10 +1370,16 @@ HideRunIndicator(index) {
         gameBtn[index].SetFont("norm")
         gameBtn[index].Text := gameName[index]
     } else if (indicatorType = "3") {
-        ; Зелёный кружок (возвращаем тёмно-зелёный цвет для пустого кружка)
+        ; Возвращаем символ ✔ (готов) или ✖ (ошибка)
         if indicatorSquare.Has(index) {
-            indicatorSquare[index].Opt("c008000")  ; Тёмно-зелёный для ○
-            indicatorSquare[index].Text := "○"
+            gameExists := FileExist(game[index])
+            if (gameExists) {
+                indicatorSquare[index].Opt("cGreen")
+                indicatorSquare[index].Text := "✔"
+            } else {
+                indicatorSquare[index].Opt("cRed")
+                indicatorSquare[index].Text := "✖"
+            }
         }
     }
 }
