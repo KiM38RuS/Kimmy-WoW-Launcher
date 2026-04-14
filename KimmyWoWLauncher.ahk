@@ -93,9 +93,9 @@ for i, name in gameName {
             indicatorSquare[i] := myGui.AddText("xm y+m w20 h30 cRed Center 0x200", "✖")
         }
 
-        gameBtn[i] := myGui.AddButton("x+0 yp w190 h30 vGameBtn" i , name)
+        gameBtn[i] := myGui.AddButton("x+0 yp w185 h30 vGameBtn" i , name)
         editBtn[i] := myGui.AddButton("x+5 yp w30 h30", "⚙")
-        cancelBtn[i] := myGui.AddButton("x+5 yp w70 h30", "Отмена")
+        cancelBtn[i] := myGui.AddButton("x+5 yp w75 h30", "Отмена")
         cancelBtn[i].Visible := false
 
         gameBtn[i].OnEvent("Click", LaunchWoW.Bind(i))
@@ -119,7 +119,7 @@ if (addedCount < 5) {
         ; Добавляем невидимый символ для выравнивания
         indicatorSquare[emptyIndex] := myGui.AddText("xm y+m w20", "")
 
-        gameBtn[emptyIndex] := myGui.AddButton("x+0 yp w190 h30", "+ Добавить игру...")
+        gameBtn[emptyIndex] := myGui.AddButton("x+0 yp w185 h30", "+ Добавить игру...")
         gameBtn[emptyIndex].OnEvent("Click", OpenSettingsMenu.Bind(emptyIndex, true))
     }
 }
@@ -310,7 +310,7 @@ WinPosY := IniRead(iniPath, "Settings", "WinPosY", "")
 showParams := ""
 ; Игнорируем координаты свернутого окна (-32000)
 if (WinPosX != "" && WinPosY != "" && WinPosX != "-32000" && WinPosY != "-32000") {
-    showParams := "x" WinPosX " y" WinPosY
+    showParams := "x" WinPosX " y" WinPosY " w350"
 }
 
 ShowMainWindow(*) {
@@ -1394,5 +1394,7 @@ HideRunIndicator(index) {
 }
 
 ; === Горячие клавиши для перезапуска скрипта ===
+#HotIf WinActive("ahk_id " myGui.Hwnd)
 F5::ReloadFunc()
 ^r::ReloadFunc()
+#HotIf
