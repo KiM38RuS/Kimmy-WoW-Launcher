@@ -3,9 +3,9 @@
 
 ;@Ahk2Exe-SetName Kimmy WoW Launcher
 ;@Ahk2Exe-SetDescription Лаунчер для разных версий игры World of Warcraft
-;@Ahk2Exe-SetVersion 1.4.4
+;@Ahk2Exe-SetVersion 1.5.0
 
-scriptVer := "v1.4.4"
+scriptVer := "v1.5.0"
 iniPath := A_ScriptDir "\KimmyWoWLauncher.ini"
 MyGuiTitle := "Kimmy WoW Launcher"
 
@@ -125,20 +125,20 @@ if (addedCount < 5) {
 }
 
 if (gamesExist) {
-    myGui.AddText("xm+10 y+m", "Скрипты:")
-    
+    myGui.AddText("xm+20 y+m", "Скрипты:")
+
     ; --- Встроенный модуль WoW alt+Tab fix ---
-    global chkAltTabFix := myGui.AddCheckbox("xm+10 y+m", "Автокликер, анти-альттаб")
-    
+    global chkAltTabFix := myGui.AddCheckbox("xm+20 y+m", "Автокликер, анти-альттаб")
+
     ; Восстанавливаем состояние чекбокса из INI
     altTabFixVal := IniRead(iniPath, "Settings", "AltTabFix", "0")
     chkAltTabFix.Value := altTabFixVal
     chkAltTabFix.OnEvent("Click", (*) => IniWrite(chkAltTabFix.Value ? "1" : "0", iniPath, "Settings", "AltTabFix"))
-    
+
     SetTimer(WatchWindow, 500) ; Запускаем таймер слежения за окном WoW
-    
-    myGui.AddText("xm+10 y+m", "Твики:")
-    global chkClearCache := myGui.AddCheckbox("xm+10 y+m", "Очистить кэш")
+
+    myGui.AddText("xm+20 y+m", "Твики:")
+    global chkClearCache := myGui.AddCheckbox("xm+20 y+m", "Очистить кэш")
     ; Если режим сохранения включен, восстанавливаем значение из INI
     if (isCacheSaved = "1") {
         chkClearCache.Value := IniRead(iniPath, "Settings", "CacheValue", "0")
@@ -148,7 +148,7 @@ if (gamesExist) {
     OnMessage(0x0200, OnMouseMove) ; Отслеживание наведения мыши
     OnMessage(0x0006, OnWindowDeactivate) ; Отслеживаем деактивацию окна (сворачивание, Alt+TAB)
 
-    progress := myGui.AddProgress("xm+10 y+m w310 h20 -Smooth")
+    progress := myGui.AddProgress("xm+20 y+m w310 h20 -Smooth")
     progress.Value := 0
     progress.Visible := false
 }
@@ -199,11 +199,17 @@ restoreOnCloseCB.OnEvent("Click", (cb, *) => IniWrite(cb.Value, iniPath, "Settin
 ; Индикация запущенной игры
 myGui.AddText("xs y+10", "Индикация запущенной игры:")
 global runIndicatorDD
-runIndicatorDD := myGui.AddDropDownList("xs y+5 w310 Choose" (Integer(runIndicatorType) + 1), ["Без индикации", "Жирный текст кнопки", "Жирная точка ● перед именем", "Символы статуса слева (✔▶✖)"])
+
+; Маппинг старых значений в новый порядок: 0→4, 1→2, 2→3, 3→1
+oldToNew := Map(0, 4, 1, 2, 2, 3, 3, 1)
+newToOld := Map(1, 3, 2, 1, 3, 2, 4, 0)
+currentSelection := oldToNew[Integer(runIndicatorType)]
+
+runIndicatorDD := myGui.AddDropDownList("xs y+5 w310 Choose" currentSelection, ["Символы статуса слева (✔▶✖)", "Жирный текст кнопки", "Жирная точка ● перед именем", "Без индикации"])
 runIndicatorDD.OnEvent("Change", (*) => SaveRunIndicatorType())
 SaveRunIndicatorType() {
-    global runIndicatorDD, iniPath
-    IniWrite(runIndicatorDD.Value - 1, iniPath, "Settings", "RunIndicatorType")
+    global runIndicatorDD, iniPath, newToOld
+    IniWrite(newToOld[runIndicatorDD.Value], iniPath, "Settings", "RunIndicatorType")
 }
 
 Tab.UseTab(3) ; Вкладка "Инфо"
@@ -302,7 +308,8 @@ WinPosX := IniRead(iniPath, "Settings", "WinPosX", "")
 WinPosY := IniRead(iniPath, "Settings", "WinPosY", "")
 
 showParams := ""
-if (WinPosX != "" && WinPosY != "") {
+; Игнорируем координаты свернутого окна (-32000)
+if (WinPosX != "" && WinPosY != "" && WinPosX != "-32000" && WinPosY != "-32000") {
     showParams := "x" WinPosX " y" WinPosY
 }
 
@@ -346,8 +353,11 @@ SaveWindowPosition(*) {
     global savePosCB, myGui, iniPath
     if (savePosCB.Value) {
         WinGetPos(&x, &y, &w, &h, "ahk_id " myGui.Hwnd)
-        IniWrite(x, iniPath, "Settings", "WinPosX")
-        IniWrite(y, iniPath, "Settings", "WinPosY")
+        ; Не сохраняем координаты свернутого окна (-32000)
+        if (x != -32000 && y != -32000) {
+            IniWrite(x, iniPath, "Settings", "WinPosX")
+            IniWrite(y, iniPath, "Settings", "WinPosY")
+        }
     }
 }
 
@@ -1341,8 +1351,7 @@ ShowRunIndicator(index) {
         ; Жирный текст
         gameBtn[index].SetFont("bold")
     } else if (indicatorType = "2") {
-        ; Точка перед именем
-        gameBtn[index].SetFont("bold")
+        ; Точка перед именем (без жирного текста)
         gameBtn[index].Text := "● " gameName[index]
     } else if (indicatorType = "3") {
         ; Символ ▶ (запущено) синего цвета
