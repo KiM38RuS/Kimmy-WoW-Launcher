@@ -3,9 +3,9 @@
 
 ;@Ahk2Exe-SetName Kimmy WoW Launcher
 ;@Ahk2Exe-SetDescription Лаунчер для разных версий игры World of Warcraft
-;@Ahk2Exe-SetVersion 1.5.0
+;@Ahk2Exe-SetVersion 1.5.1
 
-scriptVer := "v1.5.0"
+scriptVer := "v1.5.1"
 iniPath := A_ScriptDir "\KimmyWoWLauncher.ini"
 MyGuiTitle := "Kimmy WoW Launcher"
 
@@ -63,7 +63,7 @@ isCacheSaved := IniRead(iniPath, "Settings", "SaveCache", "0") ; Чекбокс 
 minOnLaunch := IniRead(iniPath, "Settings", "MinOnLaunch", 0) ; Сворачивание при запуске игры
 minToTray := IniRead(iniPath, "Settings", "MinToTray", 0) ; Сворачивание в трей
 restoreOnClose := IniRead(iniPath, "Settings", "RestoreOnClose", 0) ; Разворачивание после закрытия игры
-runIndicatorType := IniRead(iniPath, "Settings", "RunIndicatorType", "1") ; Тип индикации запущенной игры (1-жирный, 2-точка, 3-квадрат)
+runIndicatorType := IniRead(iniPath, "Settings", "RunIndicatorType", "3") ; Тип индикации запущенной игры (0-без индикации, 1-жирный, 2-точка, 3-символы статуса)
 
 ; === Интерфейс ===
 myGui := Gui(onTop, MyGuiTitle)
@@ -172,7 +172,7 @@ SaveAlwaysOnTop() {
     IniWrite(newVal, iniPath, "Settings", "AlwaysOnTop")
 }
 ; Чекбокс "Сохранять положение окна"
-savePosVal := IniRead(iniPath, "Settings", "SaveWindowPos", "0")
+savePosVal := IniRead(iniPath, "Settings", "SaveWindowPos", "1")
 savePosCB := myGui.AddCheckBox("xs vSavePos", "Сохранять положение окна при его закрытии")
 savePosCB.Value := savePosVal
 savePosCB.OnEvent("Click", (*) => SaveWindowPosSetting())
@@ -1148,7 +1148,7 @@ suspendIndicatorGui := unset
 statusIndicatorGui := unset
 wowTitles := ["World of Warcraft", "Turtle WoW", "WoWCircle"]
 
-#HotIf (chkAltTabFix.Value = 1 && IsWoWActive())
+#HotIf (IsSet(chkAltTabFix) && chkAltTabFix.Value = 1 && IsWoWActive())
 
 *F:: {
     global toggleAutoClicker
@@ -1191,7 +1191,7 @@ g:: {
 
 #SuspendExempt
 F3:: {
-    if (!chkAltTabFix.Value || !IsWoWActive())
+    if (!IsSet(chkAltTabFix) || !chkAltTabFix.Value || !IsWoWActive())
         return
         
     Suspend(-1) ; Переключаем Suspend
@@ -1204,7 +1204,7 @@ F3:: {
 }
 
 ^*f:: {
-    if (!chkAltTabFix.Value || !IsWoWActive())
+    if (!IsSet(chkAltTabFix) || !chkAltTabFix.Value || !IsWoWActive())
         return
 
     if A_IsSuspended {
@@ -1231,9 +1231,9 @@ PressMinus() {
 
 WatchWindow() {
     global toggleAutoClicker, chkAltTabFix
-    
-    ; Если чекбокс выключен — ничего не делаем, скрываем индикаторы
-    if (!chkAltTabFix.Value) {
+
+    ; Если чекбокс не существует или выключен — ничего не делаем, скрываем индикаторы
+    if (!IsSet(chkAltTabFix) || !chkAltTabFix.Value) {
         if toggleAutoClicker
             StopAutoClicker()
         HideIndicator("greenring")
